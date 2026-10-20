@@ -88,6 +88,41 @@ label{display:block;font-size:12px;font-weight:800;color:var(--muted);margin-bot
 
 @media(max-width:1180px){.kpis{grid-template-columns:repeat(3,1fr)}.cards{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}}
 @media(max-width:830px){.login-card{grid-template-columns:1fr}.login-left{min-height:330px}.sidebar{transform:translateX(-100%);transition:.2s}.sidebar.open{transform:none}.main{margin-left:0;width:100%;padding:17px}.mobile{display:inline-block}.userchip{display:none}.kpis{grid-template-columns:repeat(2,1fr)}.cards{grid-template-columns:1fr}.check-grid{grid-template-columns:1fr}.formgrid{grid-template-columns:1fr}.hero{align-items:flex-start;flex-direction:column;gap:15px}}
+
+/* ===== Perbaikan tampilan HP (responsif) ===== */
+@media(max-width:830px){
+html,body{overflow-x:hidden;max-width:100%}
+.main{padding:12px 12px 32px;min-width:0}
+.topbar{flex-direction:column;align-items:stretch;gap:10px;margin-bottom:14px}
+.topbar>div:first-child{min-width:0}
+.title h2{font-size:21px}.title p{font-size:13px}
+.top-actions{flex-wrap:wrap;gap:8px;width:100%}
+.top-actions .realtime{min-width:0;flex:1 1 140px;padding:6px 10px}
+.top-actions .realtime .clock{font-size:16px}
+.top-actions .select{flex:1 1 120px;min-width:0;width:auto}
+.top-actions .btn{flex:0 0 auto}
+.panel,.kpi,.asset,.grid2>*,.check-grid>*,.authority-grid>*,.formgrid>*,.user-form>*,.guest-asset-grid>*{min-width:0}
+.panel{padding:13px;border-radius:15px}
+.kpis{gap:9px;margin:13px 0}.kpi{padding:12px}.kpi .value{font-size:24px}
+.hero{padding:16px}.hero h3{font-size:18px}.hero-right{flex-wrap:wrap}
+.toolbar{gap:8px}.toolbar .input{max-width:none;flex:1 1 100%}.toolbar .select{flex:1 1 45%;min-width:0}
+.panel-head{flex-wrap:wrap}
+.table-wrap{-webkit-overflow-scrolling:touch}
+.calendar-grid{gap:3px}.cal-day{min-height:64px;padding:4px;border-radius:8px}.cal-num{font-size:11px;margin-bottom:2px}
+.cal-event{font-size:8px;padding:2px 3px;margin-top:2px}.cal-week{font-size:9px;padding:5px 0}
+.check-row{grid-template-columns:1fr}.choices{flex-wrap:wrap}
+.evidence-box input{max-width:100%}
+.modal{padding:8px}.modalbox{padding:14px;border-radius:16px;max-height:94vh}
+.toast{left:12px;right:12px;bottom:12px}
+.sidebar{width:min(280px,84vw);overflow-y:auto;padding-bottom:90px}
+.login{padding:10px;align-items:start;grid-template-columns:minmax(0,1fr)}.login-card{width:100%;grid-template-columns:minmax(0,1fr)}.login-left,.login-right{min-width:0}.smk3-card{width:auto}.company{max-width:100%}.login-left{padding:22px;min-height:0}.login-left h1{font-size:26px;margin:20px 0 8px}
+.login-right{padding:26px 18px}.login-right h2{font-size:24px}
+.guest-screen{padding:12px}.guest-photo{height:180px}.guest-hero{padding:15px}
+.btn{min-height:40px}
+.input,.select,textarea{font-size:16px}
+th,td{padding:9px 8px}
+}
+@media(max-width:380px){.kpis{grid-template-columns:1fr 1fr}.title h2{font-size:19px}}
 </style>
 </head>
 <body>
@@ -1884,7 +1919,24 @@ function updateLiveClock(){
 }
 setInterval(updateLiveClock,1000);updateLiveClock();
 
-function renderAll(){if(!me)return;renderDashboard();renderInventory();renderInspectionAssets();renderCalendar();renderApproval();renderFindings();renderNotifications();populateFindingAssets();renderUsers()}
+
+/* ===== Kalender inspeksi (fungsi ini tidak ada di file v5 asli) ===== */
+function changeCalendarMonth(n){calendarDate=new Date(calendarDate.getFullYear(),calendarDate.getMonth()+n,1);renderCalendar()}
+function renderCalendar(){
+ const g=document.getElementById("calendarGrid");if(!g)return;
+ const y=calendarDate.getFullYear(),m=calendarDate.getMonth(),pad=n=>String(n).padStart(2,"0");
+ document.getElementById("calendarMonthLabel").textContent=calendarDate.toLocaleDateString("id-ID",{month:"long",year:"numeric"});
+ const ids=new Set(scopedAssets().map(a=>a.id)),ev={};
+ const add=(d,e)=>{(ev[d]=ev[d]||[]).push(e)};
+ DB.inspections.filter(i=>ids.has(i.asset)).forEach(i=>add(String(i.date),{c:i.result==="FAIL"?"fail":"history",t:(i.result==="FAIL"?"FAIL ":"PASS ")+i.asset}));
+ scopedAssets().forEach(a=>{if(a.due)add(String(a.due),{c:"schedule",t:"Due "+a.id})});
+ const first=new Date(y,m,1),lead=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate(),today=new Date().toISOString().slice(0,10);
+ let h=["Sen","Sel","Rab","Kam","Jum","Sab","Min"].map(x=>'<div class="cal-week">'+x+'</div>').join("");
+ for(let i=0;i<lead;i++)h+='<div class="cal-day dim"></div>';
+ for(let d=1;d<=days;d++){const key=y+"-"+pad(m+1)+"-"+pad(d),list=ev[key]||[];
+  h+='<div class="cal-day'+(key===today?" today":"")+'"><div class="cal-num">'+d+'</div>'+list.slice(0,3).map(e=>'<div class="cal-event '+e.c+'" title="'+String(e.t).replace(/"/g,"&quot;")+'">'+String(e.t).replace(/[<>&]/g,"")+'</div>').join("")+(list.length>3?'<div class="cal-event" style="background:#eef2f6;color:#52667a">+'+(list.length-3)+' lagi</div>':"")+'</div>'}
+ g.innerHTML=h}
+function renderAll(){if(!me)return;[renderDashboard,renderInventory,renderInspectionAssets,renderCalendar,renderApproval,renderFindings,renderNotifications,populateFindingAssets,renderUsers].forEach(f=>{try{f()}catch(e){console.error(f.name,e)}})}
 
 (async function(){
  let guestId=new URLSearchParams(location.search).get("guestAsset");
