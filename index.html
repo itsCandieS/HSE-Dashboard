@@ -123,6 +123,11 @@ html,body{overflow-x:hidden;max-width:100%}
 th,td{padding:9px 8px}
 }
 @media(max-width:380px){.kpis{grid-template-columns:1fr 1fr}.title h2{font-size:19px}}
+
+.rv-info{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:12px}.rv-info>div{background:#f8fafc;border:1px solid var(--border);border-radius:11px;padding:9px 11px;min-width:0;word-break:break-word}.rv-info small{display:block;color:var(--muted);font-weight:800;font-size:10px;text-transform:uppercase;margin-bottom:3px}
+.rv-sum{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.rv-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:10px 8px;border-bottom:1px solid var(--border)}.rv-row.ng{background:#fff5f5;border-radius:10px}.rv-row .photo{width:72px;height:54px;cursor:zoom-in}
+.rv-h{font-weight:900;margin:14px 0 4px}
+@media(max-width:830px){.rv-info{grid-template-columns:1fr}.rv-row{grid-template-columns:1fr auto}.rv-row .rv-p{grid-column:1/-1}}
 </style>
 </head>
 <body>
@@ -289,6 +294,11 @@ th,td{padding:9px 8px}
   <div><label>Tanggal Penyelesaian</label><input id="fuCloseDate" class="input" type="date"></div><div><label>Bukti Foto Penyelesaian <span id="fuPhotoReq" style="color:var(--red)">*</span></label><input id="fuPhoto" class="input" type="file" accept="image/*"></div>
   <div class="full"><img id="fuPhotoPreview" class="photo-preview" alt="Preview bukti penyelesaian"></div><div class="full" style="display:flex;justify-content:flex-end;gap:8px"><button class="btn" onclick="closeModal('findingUpdateModal')">Batal</button><button class="btn success" onclick="saveFindingUpdate()">Simpan Update</button></div>
  </div>
+</div></div>
+
+<div class="modal" id="inspectionReviewModal"><div class="modalbox"><div class="modalhead"><h3>Periksa Hasil Inspeksi</h3><button class="close" onclick="closeModal('inspectionReviewModal')">×</button></div>
+ <div id="reviewBody"></div>
+ <div id="reviewActions" style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"></div>
 </div></div>
 
 <div class="toast" id="toast">Tersimpan</div>
@@ -1868,7 +1878,32 @@ async function saveInspection(){
  if(!selected||verifiedAssetId!==selected.id)return toast("Scan QR asset terlebih dahulu");let items=CHECKLISTS[selected.type]||CHECKLISTS.Other;if(Object.keys(answers).length<items.length)return toast("Lengkapi semua item checklist");if(Object.keys(evidencePhotos).length<items.length)return toast("Setiap item inspeksi wajib memiliki bukti foto");
  let fail=Object.values(answers).includes("NG"),photo=await imageToSmallData(inspPhoto),id=Date.now(),perItemEvidence={};items.forEach((item,i)=>perItemEvidence[item]=evidencePhotos[i]);DB.inspections.unshift({id,asset:selected.id,plant:selected.plant,date:new Date().toISOString().slice(0,10),frequency:frequency.value,result:fail?"FAIL":"PASS",answers:{...answers},evidence:perItemEvidence,remark:inspRemark.value,photo,inspector:me.name,approval:"PENDING",approvedBy:null,qrVerified:true});if(fail){selected.status="Rusak";let ng=Object.entries(answers).filter(x=>x[1]==="NG").map(x=>x[0]);createFinding(selected.id,"Item NG: "+ng.join(", "),"High","HSE / Maintenance",isoOffset(3),photo)}saveDB();toast(`Inspeksi ${fail?"FAIL":"PASS"} tersimpan & menunggu approval`);verifiedAssetId=null;selected=null;answers={};evidencePhotos={};checklistArea.innerHTML="Checklist akan tampil setelah scan QR.";inspectionFooter.classList.add("hidden");renderAll()
 }
-function renderApproval(){let rows=scopedInspections().filter(i=>i.approval==="PENDING");approvalTable.innerHTML=rows.map(i=>`<tr><td>${i.id}</td><td><b>${i.asset}</b></td><td>${plantName(i.plant)}</td><td>${fmtDate(i.date)}</td><td>${i.inspector}</td><td>${tag(i.result)}</td><td>${i.evidence?Object.keys(i.evidence).length:0} foto</td><td>${i.photo?`<img class="photo" src="${i.photo}" onclick="window.open(this.src,'_blank')">`:"-"}</td><td><button class="btn success small" onclick="approveInspection(${i.id},'APPROVED')">Approve</button> <button class="btn danger small" onclick="approveInspection(${i.id},'REJECTED')">Reject</button></td></tr>`).join("")||'<tr><td colspan="9" class="muted">Tidak ada inspeksi pending.</td></tr>'}
+function renderApproval(){let rows=scopedInspections().filter(i=>i.approval==="PENDING");approvalTable.innerHTML=rows.map(i=>`<tr><td>${i.id}</td><td><b>${i.asset}</b></td><td>${plantName(i.plant)}</td><td>${fmtDate(i.date)}</td><td>${i.inspector}</td><td>${tag(i.result)}</td><td>${i.evidence?Object.keys(i.evidence).length:0} foto</td><td>${i.photo?`<img class="photo" src="${i.photo}" onclick="window.open(this.src,'_blank')">`:"-"}</td><td><button class="btn primary small" onclick="openInspectionReview(${i.id})">🔍 Periksa Hasil</button></td></tr>`).join("")||'<tr><td colspan="9" class="muted">Tidak ada inspeksi pending.</td></tr>'}
+
+let reviewingId=null;
+function openInspectionReview(id){
+ const i=DB.inspections.find(x=>x.id===id);if(!i)return toast("Data inspeksi tidak ditemukan");
+ const a=DB.assets.find(x=>x.id===i.asset)||{};reviewingId=id;
+ const ans=i.answers||{},ev=i.evidence||{},items=Object.keys(ans),cnt={OK:0,NG:0,NA:0};
+ items.forEach(k=>{if(cnt[ans[k]]!=null)cnt[ans[k]]++});
+ const f=(l,v)=>`<div><small>${l}</small>${v}</div>`;
+ const rows=items.map((k,n)=>{const v=ans[k],p=ev[k];return `<div class="rv-row${v==="NG"?" ng":""}"><div><b>${n+1}. ${esc(k)}</b></div><div><span class="tag ${v==="OK"?"ok":v==="NG"?"bad":"info"}">${esc(v)}</span></div><div class="rv-p">${p?`<img class="photo" src="${esc(p)}" alt="Bukti ${n+1}" onclick="window.open(this.src,'_blank')">`:'<span class="muted" style="font-size:11px">tanpa foto</span>'}</div></div>`}).join("")||'<div class="muted">Tidak ada detail checklist pada inspeksi ini.</div>';
+ reviewBody.innerHTML=
+  `<div class="rv-info">${f("Asset",`<b>${esc(i.asset)}</b>`)}${f("Jenis / Nama",esc((a.type||"-")+" • "+(a.name||"-")))}${f("Plant / Area",esc(plantName(i.plant)+" • "+(a.area||"-")))}${f("Lokasi",esc(a.location||"-"))}${f("Tanggal Inspeksi",esc(fmtDate(i.date)))}${f("Frekuensi",esc(i.frequency||"-"))}${f("Inspector",esc(i.inspector||"-"))}${f("Verifikasi QR",i.qrVerified?"✔ Terverifikasi":"✖ Tidak ada")}</div>`+
+  `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>Hasil:</b> ${tag(i.result)} <span class="muted">Status approval: ${esc(i.approval)}</span></div>`+
+  `<div class="rv-sum"><span class="tag ok">OK: ${cnt.OK}</span><span class="tag ${cnt.NG?"bad":"info"}">NG: ${cnt.NG}</span><span class="tag info">N/A: ${cnt.NA}</span></div>`+
+  (cnt.NG?`<div class="notice danger">Ada <b>${cnt.NG} item NG</b>. Temuan (finding) sudah dibuat otomatis saat inspeksi disimpan.</div>`:"")+
+  `<div class="rv-h">Checklist & Bukti Foto</div><div>${rows}</div>`+
+  `<div class="rv-h">Foto Umum</div>${i.photo?`<img class="photo-preview" style="display:block;cursor:zoom-in" src="${esc(i.photo)}" alt="Foto umum" onclick="window.open(this.src,'_blank')">`:'<div class="muted">Tidak ada foto umum.</div>'}`+
+  `<div class="rv-h">Catatan Inspector</div><div>${i.remark?esc(i.remark):'<span class="muted">-</span>'}</div>`;
+ reviewActions.innerHTML=i.approval==="PENDING"
+  ?`<button class="btn" onclick="closeModal('inspectionReviewModal')">Tutup</button><button class="btn danger" onclick="decideInspection('REJECTED')">Reject</button><button class="btn success" onclick="decideInspection('APPROVED')">Approve</button>`
+  :`<button class="btn" onclick="closeModal('inspectionReviewModal')">Tutup</button>`;
+ inspectionReviewModal.classList.add("open")}
+function decideInspection(status){
+ if(reviewingId==null)return;
+ if(status==="REJECTED"&&!confirm("Tolak (Reject) hasil inspeksi ini?"))return;
+ approveInspection(reviewingId,status);closeModal("inspectionReviewModal");reviewingId=null}
 function approveInspection(id,status){if(!me||me.role!=="admin")return toast("Hanya ADMIN yang dapat melakukan approval");let i=DB.inspections.find(x=>x.id===id);if(!i||!allowedPlant(i.plant))return;i.approval=status;i.approvedBy=me.name;i.approvedAt=new Date().toISOString();saveDB();renderAll();toast("Status approval: "+status)}
 
 function newFindingId(){const d=new Date(),p=n=>String(n).padStart(2,"0");return "F-"+String(d.getFullYear()).slice(2)+p(d.getMonth()+1)+p(d.getDate())+"-"+Math.random().toString(36).slice(2,6).toUpperCase()}
