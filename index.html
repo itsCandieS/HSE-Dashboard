@@ -136,6 +136,12 @@ th,td{padding:9px 8px}
 @media(prefers-reduced-motion:reduce){.spinner{animation-duration:1.8s}}
 .boot{display:none;position:fixed;inset:0;z-index:300;background:var(--bg);align-items:center;justify-content:center;text-align:center;padding:20px}.boot.show{display:flex}.boot-box{max-width:360px}
 #loginBtn:disabled{opacity:.85;cursor:wait}
+
+.htabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}.htabs .btn{padding:9px 14px}
+.hnote{font-size:12px;color:var(--muted);margin:2px 0 10px}.hmore{display:flex;justify-content:center;margin-top:12px}
+.rv-dec{background:#f8fafc;border:1px solid var(--border);border-radius:11px;padding:10px 12px;margin-top:6px}.rv-dec textarea{width:100%;min-height:74px;border:1px solid var(--border);border-radius:10px;padding:9px;resize:vertical}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:13px}.kv b{color:var(--muted);font-weight:600}.kv div{min-width:0;word-break:break-word}
+@media(max-width:830px){.kv{grid-template-columns:1fr}.kv b{margin-top:6px}}
 </style>
 </head>
 <body>
@@ -187,6 +193,7 @@ th,td{padding:9px 8px}
    <a href="#" id="navCalendar" data-page="calendar">▣ Kalender</a>
    <a href="#" data-page="approval" id="approvalNav">✓ Approval</a>
    <a href="#" id="navFindings" data-page="findings">⚠ Finding</a>
+   <a href="#" id="navHistory" data-page="history">🕘 Riwayat</a>
    <a href="#" id="navNotifications" data-page="notifications">● Notifikasi</a>
    <a href="#" data-page="settings" id="settingsNav">⚙ Pengaturan & Wewenang</a>
   </nav>
@@ -240,6 +247,14 @@ th,td{padding:9px 8px}
   </section>
 
   <section class="section" id="approval"><div class="panel"><div class="panel-head"><h3>Approval Supervisor</h3><span class="muted">Inspeksi PENDING</span></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Asset</th><th>Plant</th><th>Tanggal</th><th>Inspector</th><th>Hasil</th><th>Bukti Item</th><th>Foto Umum</th><th>Aksi</th></tr></thead><tbody id="approvalTable"></tbody></table></div></div></section>
+  <section class="section" id="history"><div class="panel"><div class="panel-head"><h3>Riwayat</h3><button class="btn soft small hidden" id="histExportBtn" onclick="exportHistory()">⬇ Ekspor CSV</button></div>
+   <div class="notice" id="histNote"></div>
+   <div class="htabs"><button class="btn primary" id="hTabInsp" onclick="histTab('insp')">Inspeksi & Approval</button><button class="btn soft" id="hTabFind" onclick="histTab('find')">Finding</button><button class="btn soft hidden" id="hTabLog" onclick="histTab('log')">Log Aktivitas</button></div>
+   <div class="toolbar"><input class="input" id="hSearch" placeholder="Cari asset, inspector, PIC, catatan…" oninput="histFilterChanged()"><input class="input" type="date" id="hFrom" title="Dari tanggal" style="max-width:160px" onchange="histFilterChanged()"><input class="input" type="date" id="hTo" title="Sampai tanggal" style="max-width:160px" onchange="histFilterChanged()"><select class="select" id="hStatus" onchange="histFilterChanged()"></select><select class="select" id="hResult" onchange="histFilterChanged()"><option value="">Semua Hasil</option><option>PASS</option><option>FAIL</option></select><button class="btn soft small hidden" id="hRefreshLog" onclick="loadLogs(true)">↻ Muat ulang log</button></div>
+   <div class="hnote" id="histCount"></div>
+   <div class="table-wrap"><table><thead id="histHead"></thead><tbody id="histBody"></tbody></table></div>
+   <div class="hmore"><button class="btn soft hidden" id="histMore" onclick="H.limit+=100;renderHistory()">Tampilkan lebih banyak</button></div>
+  </div></section>
 
   <section class="section" id="findings"><div class="panel"><div class="panel-head"><h3>Finding & Corrective Action</h3><button class="btn primary" onclick="openFindingModal()">＋ Finding</button></div><div class="table-wrap"><table><thead><tr><th>ID</th><th>Asset</th><th>Plant</th><th>Temuan</th><th>Severity</th><th>PIC</th><th>Target</th><th>Status</th><th>Foto</th><th>Aksi</th></tr></thead><tbody id="findingTable"></tbody></table></div></div></section>
 
@@ -306,7 +321,11 @@ th,td{padding:9px 8px}
  </div>
 </div></div>
 
-<div class="modal" id="inspectionReviewModal"><div class="modalbox"><div class="modalhead"><h3>Periksa Hasil Inspeksi</h3><button class="close" onclick="closeModal('inspectionReviewModal')">×</button></div>
+<div class="modal" id="historyDetailModal"><div class="modalbox"><div class="modalhead"><h3 id="histDetailTitle">Detail</h3><button class="close" onclick="closeModal('historyDetailModal')">×</button></div>
+ <div id="histDetailBody"></div>
+ <div style="display:flex;justify-content:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button class="btn" onclick="closeModal('historyDetailModal')">Tutup</button></div>
+</div></div>
+<div class="modal" id="inspectionReviewModal"><div class="modalbox"><div class="modalhead"><h3 id="reviewTitle">Detail Hasil Inspeksi</h3><button class="close" onclick="closeModal('inspectionReviewModal')">×</button></div>
  <div id="reviewBody"></div>
  <div id="reviewActions" style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"></div>
 </div></div>
@@ -1743,7 +1762,7 @@ async function login(){
 function applyRoleAccess(){
  const isAdmin=me.role==="admin";
  navDashboard.style.display=isAdmin?"flex":"none";navInventory.style.display=isAdmin?"flex":"none";
- navInspection.style.display="flex";navCalendar.style.display=isAdmin?"flex":"none";
+ navInspection.style.display="flex";navHistory.style.display="flex";navCalendar.style.display=isAdmin?"flex":"none";
  approvalNav.style.display=isAdmin?"flex":"none";navFindings.style.display=isAdmin?"flex":"none";
  navNotifications.style.display=isAdmin?"flex":"none";settingsNav.style.display=isAdmin?"flex":"none";
  addAssetBtn.style.display=isAdmin?"inline-block":"none";
@@ -1760,7 +1779,7 @@ async function logout(){try{await api("logout")}catch(e){}tokStore.clear();tokSt
 function populatePlantFilter(){let list=PLANTS.filter(p=>me.plant==="ALL"||p.id===me.plant);plantFilter.innerHTML=(me.plant==="ALL"?'<option value="ALL">Semua Plant</option>':"")+list.map(p=>`<option value="${p.id}">${p.name}</option>`).join("");aPlant.innerHTML=list.map(p=>`<option value="${p.id}">${p.name}</option>`).join("");if(me.plant!=="ALL")plantFilter.value=me.plant;populateAreaOptions()}
 function populateAreaOptions(selectedArea=""){let p=aPlant.value||"PLANT-1",areas=SUBAREAS[p]||[];aArea.innerHTML=areas.map(x=>`<option value="${x}">${x}</option>`).join("");if(selectedArea&&areas.includes(selectedArea))aArea.value=selectedArea}
 
-const titles={dashboard:["Dashboard","Monitoring keselamatan terintegrasi"],inventory:["Inventory","Data APAR, Hydrant dan safety equipment"],inspection:["Inspeksi","Checklist harian, bulanan dan tahunan"],calendar:["Kalender Inspeksi","Histori dan jadwal inspeksi pada kalender"],approval:["Approval Supervisor","Persetujuan hasil inspeksi"],findings:["Finding & Corrective Action","Tindak lanjut kondisi tidak sesuai"],notifications:["Notifikasi","Due soon dan expired otomatis"],settings:["Pengaturan & Wewenang","Manajemen user, role, dan backup sistem"]};
+const titles={dashboard:["Dashboard","Monitoring keselamatan terintegrasi"],inventory:["Inventory","Data APAR, Hydrant dan safety equipment"],inspection:["Inspeksi","Checklist harian, bulanan dan tahunan"],calendar:["Kalender Inspeksi","Histori dan jadwal inspeksi pada kalender"],approval:["Approval Supervisor","Persetujuan hasil inspeksi"],findings:["Finding & Corrective Action","Tindak lanjut kondisi tidak sesuai"],notifications:["Notifikasi","Due soon dan expired otomatis"],history:["Riwayat","Histori inspeksi, approval, finding dan log aktivitas"],settings:["Pengaturan & Wewenang","Manajemen user, role, dan backup sistem"]};
 function go(id){try{localStorage.setItem("fsPage",id)}catch(e){}document.querySelectorAll(".section").forEach(x=>x.classList.remove("active"));document.getElementById(id).classList.add("active");document.querySelectorAll(".nav a").forEach(a=>a.classList.toggle("active",a.dataset.page===id));pageTitle.textContent=titles[id][0];pageSub.textContent=titles[id][1];sidebar.classList.remove("open");renderAll()}
 document.querySelectorAll(".nav a").forEach(a=>a.onclick=e=>{e.preventDefault();go(a.dataset.page)});
 
@@ -1780,7 +1799,7 @@ function renderInventory(){
  let areas=[...new Set(aa.map(a=>a.area).filter(Boolean))].sort(),oldArea=af;
  areaFilter.innerHTML='<option value="">Semua Area</option>'+areas.map(x=>`<option>${x}</option>`).join("");areaFilter.value=oldArea;
  let rows=aa.filter(a=>(!q||[a.id,a.name,a.area,a.location,a.media,plantName(a.plant)].join(" ").toLowerCase().includes(q))&&(!tf||a.type===tf)&&(!af||a.area===af)&&(!sf||(sf==="Normal"?isNormalSt(a.status):a.status===sf)));
- assetCards.innerHTML=rows.map(a=>`<div class="asset">${a.photo?`<img class="asset-photo" src="${a.photo}" alt="Foto ${a.id}" onclick="window.open(this.src,'_blank')">`:`<div class="asset-photo-placeholder">FOTO BELUM TERSEDIA</div>`}<div style="display:flex;justify-content:space-between;gap:8px"><div><h4>${a.id}</h4><small>${a.type} • ${plantName(a.plant)} • ${a.area||"-"}</small></div>${tag(a.status)}</div><p style="margin:11px 0 4px">${a.name}</p><small>${a.location||"-"} • ${a.media} • ${a.capacity}</small><div style="font-size:11px;margin-top:6px;color:var(--muted)">Next Due: ${fmtDate(a.due)} • QR otomatis tersedia</div><div class="asset-actions"><button class="btn soft small" onclick="showQR('${a.id}')">▣ QR</button>${me&&me.role==="admin"?`<button class="btn soft small" onclick="editAsset('${a.id}')">✎ Edit</button>`:""}<button class="btn soft small" onclick="go('inspection');openScanModal('${a.id}')">☑ Scan & Inspeksi</button></div></div>`).join("")||'<div class="muted">Tidak ada asset sesuai filter.</div>'
+ assetCards.innerHTML=rows.map(a=>`<div class="asset">${a.photo?`<img class="asset-photo" src="${a.photo}" alt="Foto ${a.id}" onclick="window.open(this.src,'_blank')">`:`<div class="asset-photo-placeholder">FOTO BELUM TERSEDIA</div>`}<div style="display:flex;justify-content:space-between;gap:8px"><div><h4>${a.id}</h4><small>${a.type} • ${plantName(a.plant)} • ${a.area||"-"}</small></div>${tag(a.status)}</div><p style="margin:11px 0 4px">${a.name}</p><small>${a.location||"-"} • ${a.media} • ${a.capacity}</small><div style="font-size:11px;margin-top:6px;color:var(--muted)">Next Due: ${fmtDate(a.due)} • QR otomatis tersedia</div><div class="asset-actions"><button class="btn soft small" onclick="showQR('${a.id}')">▣ QR</button>${me&&me.role==="admin"?`<button class="btn soft small" onclick="editAsset('${a.id}')">✎ Edit</button>`:""}<button class="btn soft small" onclick="go('inspection');openScanModal('${a.id}')">☑ Scan & Inspeksi</button><button class="btn soft small" onclick="viewAssetHistory('${a.id}')">🕘 Riwayat</button></div></div>`).join("")||'<div class="muted">Tidak ada asset sesuai filter.</div>'
 }
 function openAssetModal(){if(!me||me.role!=="admin")return toast("Hanya ADMIN yang dapat menambah asset");
  editingAssetId=null;
@@ -1940,16 +1959,21 @@ function openInspectionReview(id){
   (cnt.NG?`<div class="notice danger">Ada <b>${cnt.NG} item NG</b>. Temuan (finding) sudah dibuat otomatis saat inspeksi disimpan.</div>`:"")+
   `<div class="rv-h">Checklist & Bukti Foto</div><div>${rows}</div>`+
   `<div class="rv-h">Foto Umum</div>${i.photo?`<img class="photo-preview" style="display:block;cursor:zoom-in" src="${esc(i.photo)}" alt="Foto umum" onclick="window.open(this.src,'_blank')">`:'<div class="muted">Tidak ada foto umum.</div>'}`+
-  `<div class="rv-h">Catatan Inspector</div><div>${i.remark?esc(i.remark):'<span class="muted">-</span>'}</div>`;
- reviewActions.innerHTML=i.approval==="PENDING"
+  `<div class="rv-h">Catatan Inspector</div><div>${i.remark?esc(i.remark):'<span class="muted">-</span>'}</div>`+
+  `<div class="rv-h">Approval</div>`+(i.approval==="PENDING"
+    ?(me.role==="admin"?`<div class="rv-dec"><label style="font-size:12px;font-weight:700">Catatan approval <span class="muted" style="font-weight:400">(wajib bila Reject, opsional bila Approve)</span></label><textarea id="reviewNote" maxlength="500" placeholder="Contoh: Foto tekanan gauge kurang jelas, mohon ulangi."></textarea></div>`:`<div class="notice warning">Menunggu keputusan admin. Halaman ini hanya untuk dilihat.</div>`)
+    :`<div class="rv-dec"><div class="rv-info" style="margin:0 0 8px">${f("Keputusan",tag(i.approval))}${f("Diputuskan oleh",esc(i.approvedBy||"-"))}${f("Waktu keputusan",fmtDT(i.approvedAt))}${f("Dikirim",fmtDT(i.createdAt))}</div><small class="muted">Catatan approval</small><div>${i.approvalNote?esc(i.approvalNote):'<span class="muted">-</span>'}</div></div>`);
+ reviewActions.innerHTML=i.approval==="PENDING"&&me.role==="admin"
   ?`<button class="btn" onclick="closeModal('inspectionReviewModal')">Tutup</button><button class="btn danger" onclick="decideInspection('REJECTED')">Reject</button><button class="btn success" onclick="decideInspection('APPROVED')">Approve</button>`
   :`<button class="btn" onclick="closeModal('inspectionReviewModal')">Tutup</button>`;
  inspectionReviewModal.classList.add("open")}
 function decideInspection(status){
  if(reviewingId==null)return;
+ const nEl=document.getElementById("reviewNote"),note=nEl?nEl.value.trim():"";
+ if(status==="REJECTED"&&!note){toast("Catatan wajib diisi untuk menolak (Reject)");if(nEl){nEl.focus();nEl.style.borderColor="var(--red)"}return}
  if(status==="REJECTED"&&!confirm("Tolak (Reject) hasil inspeksi ini?"))return;
- approveInspection(reviewingId,status);closeModal("inspectionReviewModal");reviewingId=null}
-function approveInspection(id,status){if(!me||me.role!=="admin")return toast("Hanya ADMIN yang dapat melakukan approval");let i=DB.inspections.find(x=>x.id===id);if(!i||!allowedPlant(i.plant))return;i.approval=status;i.approvedBy=me.name;i.approvedAt=new Date().toISOString();saveDB();renderAll();toast("Status approval: "+status)}
+ approveInspection(reviewingId,status,note);closeModal("inspectionReviewModal");reviewingId=null}
+function approveInspection(id,status,note){if(!me||me.role!=="admin")return toast("Hanya ADMIN yang dapat melakukan approval");let i=DB.inspections.find(x=>x.id===id);if(!i||!allowedPlant(i.plant))return;i.approval=status;i.approvedBy=me.name;i.approvedAt=new Date().toISOString();i.approvalNote=note||"";saveDB();renderAll();toast("Status approval: "+status)}
 
 function newFindingId(){const d=new Date(),p=n=>String(n).padStart(2,"0");return "F-"+String(d.getFullYear()).slice(2)+p(d.getMonth()+1)+p(d.getDate())+"-"+Math.random().toString(36).slice(2,6).toUpperCase()}
 function createFinding(asset,desc,severity,pic,target,photo){DB.findings.unshift({id:newFindingId(),asset,desc,severity,pic,target,status:"OPEN",photo:photo||null,created:new Date().toISOString()})}
@@ -2019,7 +2043,93 @@ function renderCalendar(){
  for(let d=1;d<=days;d++){const key=y+"-"+pad(m+1)+"-"+pad(d),list=ev[key]||[];
   h+='<div class="cal-day'+(key===today?" today":"")+'"><div class="cal-num">'+d+'</div>'+list.slice(0,3).map(e=>'<div class="cal-event '+e.c+'" title="'+String(e.t).replace(/"/g,"&quot;")+'">'+String(e.t).replace(/[<>&]/g,"")+'</div>').join("")+(list.length>3?'<div class="cal-event" style="background:#eef2f6;color:#52667a">+'+(list.length-3)+' lagi</div>':"")+'</div>'}
  g.innerHTML=h}
-function renderAll(){if(!me)return;[renderDashboard,renderInventory,renderInspectionAssets,renderCalendar,renderApproval,renderFindings,renderNotifications,populateFindingAssets,renderUsers].forEach(f=>{try{f()}catch(e){console.error(f.name,e)}})}
+
+/* ===== RIWAYAT (view-only untuk semua role; ekspor & log aktivitas khusus admin) ===== */
+const H={tab:"insp",limit:100,logs:null,busy:false,err:"",total:0,ready:false};
+function fmtDT(s){if(!s)return"-";const d=new Date(s);return isNaN(d)?esc(s):d.toLocaleString("id-ID",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}
+function histSetup(){
+ const sel=document.getElementById("hStatus"),t=H.tab;
+ const opts=t==="insp"?[["","Semua Approval"],["PENDING","PENDING"],["APPROVED","APPROVED"],["REJECTED","REJECTED"]]
+  :t==="find"?[["","Semua Status"],["OPEN","OPEN"],["IN PROGRESS","IN PROGRESS"],["CLOSED","CLOSED"]]
+  :[["","Semua Aksi"],["LOGIN","Login"],["ASSET","Asset"],["INSPECTION","Inspeksi / Approval"],["FINDING","Finding"],["USER","User"]];
+ sel.innerHTML=opts.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("");
+ hResult.classList.toggle("hidden",t!=="insp");hRefreshLog.classList.toggle("hidden",t!=="log");
+ hSearch.placeholder=t==="log"?"Cari user, objek, detail…":t==="find"?"Cari asset, temuan, PIC…":"Cari asset, inspector, catatan…";
+ H.ready=true}
+function histTab(t){if(t==="log"&&(!me||me.role!=="admin"))return;H.tab=t;H.limit=100;hSearch.value="";hFrom.value="";hTo.value="";histSetup();if(t==="log"&&!H.logs)loadLogs();renderHistory()}
+function histFilterChanged(){H.limit=100;renderHistory()}
+function viewAssetHistory(id){H.tab="insp";histSetup();hSearch.value=id;hFrom.value=hTo.value=hStatus.value=hResult.value="";go("history")}
+async function loadLogs(force){
+ if(!me||me.role!=="admin"||H.busy)return;H.busy=true;H.err="";renderHistory();
+ try{const r=await api("history");H.logs=r.logs||[];H.total=r.total||H.logs.length}catch(e){H.err=e.message||"Gagal memuat log"}
+ H.busy=false;renderHistory()}
+function histFilters(){return{q:(hSearch.value||"").toLowerCase().trim(),from:hFrom.value,to:hTo.value,st:hStatus.value,res:hResult.value}}
+function inRange(d,F){d=String(d||"").slice(0,10);return(!F.from||d>=F.from)&&(!F.to||d<=F.to)}
+function histInsp(){
+ const F=histFilters();
+ return scopedInspections().filter(i=>{
+  const a=DB.assets.find(x=>x.id===i.asset)||{};
+  return inRange(i.date,F)&&(!F.st||i.approval===F.st)&&(!F.res||i.result===F.res)&&(!F.q||[i.id,i.asset,a.name,a.location,i.inspector,i.approvedBy,i.remark,i.approvalNote,i.frequency].join(" ").toLowerCase().includes(F.q))
+ }).sort((x,y)=>String(y.date).localeCompare(String(x.date))||(Number(y.id)||0)-(Number(x.id)||0))}
+function histFind(){
+ const F=histFilters();
+ return scopedFindings().filter(f=>inRange(f.created,F)&&(!F.st||f.status===F.st)&&(!F.q||[f.id,f.asset,f.desc,f.pic,f.correctiveAction,f.closedBy,f.severity].join(" ").toLowerCase().includes(F.q)))
+  .sort((x,y)=>String(y.created).localeCompare(String(x.created)))}
+function histLog(){
+ const F=histFilters();
+ return(H.logs||[]).filter(l=>inRange(l.time,F)&&(!F.st||String(l.action).startsWith(F.st))&&(!F.q||[l.user,l.name,l.action,l.recordId,l.detail].join(" ").toLowerCase().includes(F.q)))}
+function renderHistory(){
+ if(!me)return;
+ const admin=me.role==="admin";
+ if(!admin&&H.tab==="log")H.tab="insp";
+ if(!H.ready)histSetup();
+ hTabLog.classList.toggle("hidden",!admin);histExportBtn.classList.toggle("hidden",!admin);
+ [["insp",hTabInsp],["find",hTabFind],["log",hTabLog]].forEach(p=>{p[1].classList.toggle("primary",H.tab===p[0]);p[1].classList.toggle("soft",H.tab!==p[0])});
+ histNote.className="notice";
+ histNote.innerHTML=admin?"Anda masuk sebagai <b>admin</b>: dapat mengekspor CSV dan melihat Log Aktivitas. Keputusan approval dilakukan di menu Approval."
+  :"Mode <b>lihat saja</b>: Anda dapat melihat riwayat"+(me.plant!=="ALL"?" untuk "+esc(plantName(me.plant)):"")+" tetapi tidak dapat mengubah, menghapus atau mengekspor data.";
+ let rows,head,body;
+ if(H.tab==="insp"){
+  rows=histInsp();head="<tr><th>Tanggal</th><th>Asset</th><th>Hasil</th><th>Inspector</th><th>Approval</th><th>Diputuskan oleh</th><th>Catatan approval</th><th>Aksi</th></tr>";
+  body=r=>`<tr><td>${fmtDate(r.date)}<div class="muted" style="font-size:11px">${esc(r.frequency||"-")}</div></td><td><b>${esc(r.asset)}</b><div class="muted" style="font-size:11px">${esc(plantName(r.plant))}</div></td><td>${tag(r.result)}</td><td>${esc(r.inspector||"-")}</td><td>${tag(r.approval)}</td><td>${r.approvedBy?esc(r.approvedBy)+'<div class="muted" style="font-size:11px">'+fmtDT(r.approvedAt)+'</div>':"-"}</td><td class="wrap">${r.approvalNote?esc(r.approvalNote):"-"}</td><td><button class="btn soft small" onclick="openInspectionReview(${r.id})">🔍 Detail</button></td></tr>`;
+ }else if(H.tab==="find"){
+  rows=histFind();head="<tr><th>ID</th><th>Asset</th><th>Plant</th><th>Temuan</th><th>Severity</th><th>Status</th><th>PIC</th><th>Dibuat</th><th>Target</th><th>Ditutup</th><th>Aksi</th></tr>";
+  body=r=>{const a=DB.assets.find(x=>x.id===r.asset);return `<tr><td><b>${esc(r.id)}</b></td><td>${esc(r.asset)}</td><td>${a?esc(plantName(a.plant)):"-"}</td><td class="wrap">${esc(r.desc)}</td><td>${tag(r.severity)}</td><td>${tag(r.status)}</td><td>${esc(r.pic||"-")}</td><td>${fmtDT(r.created)}</td><td>${fmtDate(r.target)}</td><td>${r.status==="CLOSED"?fmtDate(r.closedDate)+'<div class="muted" style="font-size:11px">'+esc(r.closedBy||"")+'</div>':"-"}</td><td><button class="btn soft small" onclick="openFindingHistory('${esc(r.id)}')">🔍 Detail</button></td></tr>`};
+ }else{
+  if(H.busy){histHead.innerHTML="";histBody.innerHTML='<tr><td class="muted">Memuat log aktivitas…</td></tr>';histCount.textContent="";histMore.classList.add("hidden");return}
+  if(H.err){histHead.innerHTML="";histBody.innerHTML=`<tr><td class="muted">${esc(H.err)}</td></tr>`;histCount.textContent="";histMore.classList.add("hidden");return}
+  rows=histLog();head="<tr><th>Waktu</th><th>User</th><th>Aksi</th><th>Objek</th><th>Detail</th></tr>";
+  body=r=>`<tr><td>${fmtDT(r.time)}</td><td>${esc(r.name||r.user||"-")}<div class="muted" style="font-size:11px">${esc(r.user)}${r.role?" • "+esc(r.role):""}</div></td><td><span class="tag info">${esc(r.action)}</span></td><td>${esc(r.table)} ${esc(r.recordId)}</td><td class="wrap">${esc(r.detail)}</td></tr>`;
+ }
+ histHead.innerHTML=head;
+ const shown=rows.slice(0,H.limit);
+ histBody.innerHTML=shown.map(body).join("")||`<tr><td colspan="11" class="muted">Tidak ada data yang sesuai filter.</td></tr>`;
+ histCount.textContent=`Menampilkan ${shown.length} dari ${rows.length} data`+(H.tab==="log"&&H.total>(H.logs||[]).length?` (log terbaru dari ${H.total} total)`:"");
+ histMore.classList.toggle("hidden",rows.length<=H.limit)}
+function openFindingHistory(id){
+ const f=DB.findings.find(x=>String(x.id)===String(id));if(!f)return toast("Data finding tidak ditemukan");
+ const a=DB.assets.find(x=>x.id===f.asset)||{};
+ const ph=(u)=>u?`<img class="photo-preview" style="display:block;cursor:zoom-in;max-width:260px" src="${esc(u)}" onclick="window.open(this.src,'_blank')">`:'<span class="muted">-</span>';
+ const kv=(l,v)=>`<b>${l}</b><div>${v}</div>`;
+ histDetailTitle.textContent="Detail Finding "+f.id;
+ histDetailBody.innerHTML=`<div class="kv">${kv("Asset",esc(f.asset)+" • "+esc((a.type||"-")+" • "+(a.location||"-")))}${kv("Plant",esc(plantName(a.plant)))}${kv("Temuan",esc(f.desc))}${kv("Severity",tag(f.severity))}${kv("Status",tag(f.status))}${kv("PIC",esc(f.pic||"-"))}${kv("Dibuat",fmtDT(f.created))}${kv("Target selesai",fmtDate(f.target))}${kv("Corrective action",f.correctiveAction?esc(f.correctiveAction):"-")}${kv("Catatan verifikasi",f.verificationNote?esc(f.verificationNote):"-")}${kv("Ditutup",f.status==="CLOSED"?fmtDate(f.closedDate)+" oleh "+esc(f.closedBy||"-"):"-")}${kv("Foto temuan",ph(f.photo))}${kv("Foto penutupan",ph(f.closePhoto))}</div>`;
+ historyDetailModal.classList.add("open")}
+function csvCell(v){let t=String(v==null?"":v);if(/^[=+\-@]/.test(t))t="'"+t;return /[",\n;]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t}
+function exportHistory(){
+ if(!me||me.role!=="admin")return toast("Hanya ADMIN yang dapat mengekspor riwayat");
+ let head,rows,name;
+ if(H.tab==="insp"){name="riwayat_inspeksi";head=["ID","Tanggal","Asset","Plant","Frekuensi","Hasil","Inspector","Approval","Diputuskan oleh","Waktu keputusan","Catatan approval","Catatan inspector","QR terverifikasi","Dikirim"];
+  rows=histInsp().map(r=>[r.id,r.date,r.asset,r.plant,r.frequency,r.result,r.inspector,r.approval,r.approvedBy,r.approvedAt,r.approvalNote,r.remark,r.qrVerified?"Ya":"Tidak",r.createdAt])}
+ else if(H.tab==="find"){name="riwayat_finding";head=["ID","Asset","Temuan","Severity","Status","PIC","Dibuat","Target","Corrective action","Catatan verifikasi","Tanggal tutup","Ditutup oleh"];
+  rows=histFind().map(r=>[r.id,r.asset,r.desc,r.severity,r.status,r.pic,r.created,r.target,r.correctiveAction,r.verificationNote,r.closedDate,r.closedBy])}
+ else{name="log_aktivitas";head=["Waktu","Username","Nama","Role","Aksi","Tabel","ID Objek","Detail"];rows=histLog().map(r=>[r.time,r.user,r.name,r.role,r.action,r.table,r.recordId,r.detail])}
+ if(!rows.length)return toast("Tidak ada data untuk diekspor");
+ const csv="﻿"+[head].concat(rows).map(r=>r.map(csvCell).join(",")).join("\r\n");
+ const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+ a.download=name+"_"+new Date().toISOString().slice(0,10)+".csv";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);
+ toast("Ekspor "+rows.length+" baris selesai")}
+
+function renderAll(){if(!me)return;[renderDashboard,renderInventory,renderInspectionAssets,renderCalendar,renderApproval,renderFindings,renderHistory,renderNotifications,populateFindingAssets,renderUsers].forEach(f=>{try{f()}catch(e){console.error(f.name,e)}})}
 
 function bootHide(){bootLoader.classList.remove("show")}
 function bootError(e){bootLoader.classList.add("show");bootMsg.textContent="Tidak dapat memuat dashboard: "+((e&&e.message)||"gangguan koneksi")+". Sesi login Anda masih tersimpan.";bootActions.classList.remove("hidden");bootLoader.querySelector(".spinner").style.display="none"}
