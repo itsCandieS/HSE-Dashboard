@@ -129,10 +129,19 @@ th,td{padding:9px 8px}
 .rv-h{font-weight:900;margin:14px 0 4px}
 @media(max-width:830px){.rv-info{grid-template-columns:1fr}.rv-row{grid-template-columns:1fr auto}.rv-row .rv-p{grid-column:1/-1}}
 .check-row.missing{background:#fff1f1;border-radius:10px;box-shadow:0 0 0 2px #f5a3a3;padding-left:8px;padding-right:8px}
+
+.spinner{display:inline-block;width:16px;height:16px;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-3px}
+.spinner.lg{width:46px;height:46px;border-width:4px;border-color:#cfe5f8;border-top-color:var(--blue)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.spinner{animation-duration:1.8s}}
+.boot{display:none;position:fixed;inset:0;z-index:300;background:var(--bg);align-items:center;justify-content:center;text-align:center;padding:20px}.boot.show{display:flex}.boot-box{max-width:360px}
+#loginBtn:disabled{opacity:.85;cursor:wait}
 </style>
 </head>
 <body>
 
+<div id="bootLoader" class="boot"><div class="boot-box"><div class="spinner lg"></div><div id="bootMsg" style="margin-top:16px;font-weight:800">Memuat sesi Anda…</div><div id="bootActions" class="hidden" style="margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn primary" onclick="location.reload()">Coba Lagi</button><button class="btn" onclick="tokStore.clear();location.reload()">Masuk Ulang</button></div></div></div>
+<script>try{if(localStorage.getItem("fsToken")||sessionStorage.getItem("fsToken"))document.getElementById("bootLoader").classList.add("show")}catch(e){}</script>
 <div id="loginScreen" class="login">
  <div class="login-card">
   <div class="login-left">
@@ -148,7 +157,7 @@ th,td{padding:9px 8px}
    <h2>Login User</h2><p class="muted">Data tersimpan terpusat di Google Sheets.</p>
    <div class="field"><label>Username</label><input class="input" id="loginUser" autocomplete="username"></div>
    <div class="field"><label>Password</label><input class="input" id="loginPass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()"></div>
-   <button class="btn primary" style="margin-top:18px" onclick="login()">Masuk</button>
+   <button id="loginBtn" class="btn primary" style="margin-top:18px;width:100%" onclick="login()">Masuk</button>
    <div class="demo">Login memakai akun yang dibuat Admin pada sheet <b>Users</b>. Akun Inspector dibuat dari menu <b>Pengaturan &amp; Wewenang</b>.</div>
    <div class="guest-access"><b>Guest / Tamu</b><div class="muted" style="font-size:12px;margin:4px 0 9px">Tidak perlu login. Scan QR asset untuk melihat profil dan histori inspeksi yang sudah disetujui Admin.</div><button class="btn soft" style="width:100%" onclick="openGuestScan()">▣ Scan QR sebagai Guest</button></div>
    <div class="login-note">Password disimpan sebagai hash di server. <a href="#" onclick="setApiUrl();return false">⚙ Atur koneksi Google Sheets</a></div>
@@ -1568,7 +1577,8 @@ window.QRErrorCorrectLevel=require("QRErrorCorrectLevel");
 /* ===== GOOGLE SHEETS CONNECTOR (v6) ===== */
 const DEFAULT_API_URL="PASTE_URL_WEB_APP_DI_SINI";
 let API_URL=localStorage.getItem("fsApiUrl")||DEFAULT_API_URL;
-let TOKEN=sessionStorage.getItem("fsToken")||"";
+const tokStore={get(){try{return localStorage.getItem("fsToken")||sessionStorage.getItem("fsToken")||""}catch(e){return ""}},set(v){try{localStorage.setItem("fsToken",v)}catch(e){try{sessionStorage.setItem("fsToken",v)}catch(_){}}},clear(){try{localStorage.removeItem("fsToken")}catch(e){}try{sessionStorage.removeItem("fsToken")}catch(e){}try{localStorage.removeItem("fsPage")}catch(e){}}};
+let TOKEN=tokStore.get();
 const TABLES={assets:"id",users:"username",inspections:"id",findings:"id"};
 let SNAP={assets:{},users:{},inspections:{},findings:{}},INFLIGHT={},syncTimer=null,syncBusy=false,syncFail=0;
 function emptyDB(){return{assets:[],users:[],inspections:[],findings:[]}}
@@ -1614,7 +1624,7 @@ async function flush(){
  }catch(e){
   ops.forEach(o=>delete INFLIGHT[o.table+"|"+o.record[TABLES[o.table]]]);
   syncFail++;
-  if(e.code==="AUTH"){toast(e.message);setTimeout(()=>{sessionStorage.removeItem("fsToken");location.reload()},1500)}
+  if(e.code==="AUTH"){toast(e.message);setTimeout(()=>{tokStore.clear();location.reload()},1500)}
   else{if(syncFail===1)toast("Gagal menyimpan ke Google Sheets: "+e.message);setSync("err");setTimeout(flush,10000)}
  }finally{syncBusy=false}
  if(needPull){try{await pullAll();renderAll()}catch(e){}}
@@ -1623,7 +1633,7 @@ async function flush(){
 setInterval(async()=>{
  if(!me||!TOKEN||syncBusy||selected||document.querySelector(".modal.open"))return;
  if(pendingOps().length)return;
- try{await pullAll();renderAll();if(!syncFail)setSync("ok")}catch(e){if(e.code==="AUTH"){toast(e.message);setTimeout(()=>{sessionStorage.removeItem("fsToken");location.reload()},1500)}else setSync("err")}
+ try{await pullAll();renderAll();if(!syncFail)setSync("ok")}catch(e){if(e.code==="AUTH"){toast(e.message);setTimeout(()=>{tokStore.clear();location.reload()},1500)}else setSync("err")}
 },30000);
 /* ===== END CONNECTOR ===== */
 
@@ -1717,12 +1727,18 @@ let toastTimer=null;function toast(msg){let t=document.getElementById("toast");t
 function tag(s){let c=["Normal","NORMAL - USE","NORMAL - SPARE","APPROVED","CLOSED","PASS"].includes(s)?"ok":["Due Soon","PENDING","IN PROGRESS","Medium"].includes(s)?"warn":["Rusak","NG","Expired","FAIL","REJECTED","High","Critical"].includes(s)?"bad":"info";return `<span class="tag ${c}">${s}</span>`}
 function fmtDate(s){if(!s)return"-";return new Date(s+"T12:00:00").toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"})}
 
+let loginBusy=false;
+function setLoginBusy(on,msg){loginBusy=on;const b=document.getElementById("loginBtn");if(!b)return;b.disabled=on;b.innerHTML=on?'<span class="spinner"></span> '+msg:"Masuk";loginUser.disabled=on;loginPass.disabled=on}
 async function login(){
+ if(loginBusy)return;
+ if(!loginUser.value.trim()||!loginPass.value)return toast("Isi username dan password");
+ setLoginBusy(true,"Memverifikasi akun…");
  try{
   const r=await api("login",{username:loginUser.value.trim(),password:loginPass.value},false);
-  TOKEN=r.token;sessionStorage.setItem("fsToken",TOKEN);me=r.user;
-  loginPass.value="";await pullAll();setSync("ok");showApp()
- }catch(e){toast(e.message);if(!apiReady())setApiUrl()}
+  TOKEN=r.token;tokStore.set(TOKEN);me=r.user;try{localStorage.removeItem("fsPage")}catch(e){}
+  setLoginBusy(true,"Memuat data…");
+  loginPass.value="";await pullAll();setSync("ok");showApp();setLoginBusy(false)
+ }catch(e){setLoginBusy(false);toast(e.message);if(!apiReady())setApiUrl()}
 }
 function applyRoleAccess(){
  const isAdmin=me.role==="admin";
@@ -1737,15 +1753,15 @@ function showApp(){
  loginScreen.style.display="none";guestScreen.classList.add("hidden");app.style.display="block";
  userName.textContent=me.name;userRole.textContent=me.role.toUpperCase()+(me.plant!=="ALL"?" • "+plantName(me.plant):" • ALL PLANTS");heroName.textContent=me.name;
  populatePlantFilter();applyRoleAccess();renderAll();
- if(me.role==="inspector"){go("inspection")}else{go("dashboard")}
+ if(me.role==="inspector"){go("inspection")}else{let lp="";try{lp=window.__restorePage?(localStorage.getItem("fsPage")||""):""}catch(e){}window.__restorePage=false;go(lp&&titles[lp]?lp:"dashboard")}
  let q=new URLSearchParams(location.search).get("asset");if(q&&me.role==="admin"){go("inventory");assetSearch.value=q;renderInventory()}
 }
-async function logout(){try{await api("logout")}catch(e){}sessionStorage.removeItem("fsToken");location.reload()}
+async function logout(){try{await api("logout")}catch(e){}tokStore.clear();tokStore.clear();location.reload()}
 function populatePlantFilter(){let list=PLANTS.filter(p=>me.plant==="ALL"||p.id===me.plant);plantFilter.innerHTML=(me.plant==="ALL"?'<option value="ALL">Semua Plant</option>':"")+list.map(p=>`<option value="${p.id}">${p.name}</option>`).join("");aPlant.innerHTML=list.map(p=>`<option value="${p.id}">${p.name}</option>`).join("");if(me.plant!=="ALL")plantFilter.value=me.plant;populateAreaOptions()}
 function populateAreaOptions(selectedArea=""){let p=aPlant.value||"PLANT-1",areas=SUBAREAS[p]||[];aArea.innerHTML=areas.map(x=>`<option value="${x}">${x}</option>`).join("");if(selectedArea&&areas.includes(selectedArea))aArea.value=selectedArea}
 
 const titles={dashboard:["Dashboard","Monitoring keselamatan terintegrasi"],inventory:["Inventory","Data APAR, Hydrant dan safety equipment"],inspection:["Inspeksi","Checklist harian, bulanan dan tahunan"],calendar:["Kalender Inspeksi","Histori dan jadwal inspeksi pada kalender"],approval:["Approval Supervisor","Persetujuan hasil inspeksi"],findings:["Finding & Corrective Action","Tindak lanjut kondisi tidak sesuai"],notifications:["Notifikasi","Due soon dan expired otomatis"],settings:["Pengaturan & Wewenang","Manajemen user, role, dan backup sistem"]};
-function go(id){document.querySelectorAll(".section").forEach(x=>x.classList.remove("active"));document.getElementById(id).classList.add("active");document.querySelectorAll(".nav a").forEach(a=>a.classList.toggle("active",a.dataset.page===id));pageTitle.textContent=titles[id][0];pageSub.textContent=titles[id][1];sidebar.classList.remove("open");renderAll()}
+function go(id){try{localStorage.setItem("fsPage",id)}catch(e){}document.querySelectorAll(".section").forEach(x=>x.classList.remove("active"));document.getElementById(id).classList.add("active");document.querySelectorAll(".nav a").forEach(a=>a.classList.toggle("active",a.dataset.page===id));pageTitle.textContent=titles[id][0];pageSub.textContent=titles[id][1];sidebar.classList.remove("open");renderAll()}
 document.querySelectorAll(".nav a").forEach(a=>a.onclick=e=>{e.preventDefault();go(a.dataset.page)});
 
 function daysUntil(s){let now=new Date();now.setHours(0,0,0,0);let d=new Date(s+"T00:00:00");return Math.ceil((d-now)/86400000)}
@@ -2005,14 +2021,19 @@ function renderCalendar(){
  g.innerHTML=h}
 function renderAll(){if(!me)return;[renderDashboard,renderInventory,renderInspectionAssets,renderCalendar,renderApproval,renderFindings,renderNotifications,populateFindingAssets,renderUsers].forEach(f=>{try{f()}catch(e){console.error(f.name,e)}})}
 
+function bootHide(){bootLoader.classList.remove("show")}
+function bootError(e){bootLoader.classList.add("show");bootMsg.textContent="Tidak dapat memuat dashboard: "+((e&&e.message)||"gangguan koneksi")+". Sesi login Anda masih tersimpan.";bootActions.classList.remove("hidden");bootLoader.querySelector(".spinner").style.display="none"}
 (async function(){
  let guestId=new URLSearchParams(location.search).get("guestAsset");
- if(guestId){showGuestAsset(guestId);return}
- if(!apiReady()){setSync("off");return}
+ if(guestId){bootHide();showGuestAsset(guestId);return}
+ if(!apiReady()){bootHide();setSync("off");return}
  setSync("ok");
- if(TOKEN){
-  try{const r=await api("session");me=Object.assign({},r.user);await pullAll();showApp()}
-  catch(e){sessionStorage.removeItem("fsToken");TOKEN="";me=null}
+ if(!TOKEN){bootHide();return}
+ try{
+  const r=await api("session");me=Object.assign({},r.user);await pullAll();window.__restorePage=true;showApp();bootHide()
+ }catch(e){
+  if(e&&e.code==="AUTH"){tokStore.clear();TOKEN="";me=null;bootHide();toast(e.message||"Sesi berakhir, silakan login ulang")}
+  else{console.error(e);bootError(e)}
  }
 })();
 </script>
