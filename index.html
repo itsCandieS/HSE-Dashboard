@@ -142,6 +142,15 @@ th,td{padding:9px 8px}
 .rv-dec{background:#f8fafc;border:1px solid var(--border);border-radius:11px;padding:10px 12px;margin-top:6px}.rv-dec textarea{width:100%;min-height:74px;border:1px solid var(--border);border-radius:10px;padding:9px;resize:vertical}
 .kv{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:13px}.kv b{color:var(--muted);font-weight:600}.kv div{min-width:0;word-break:break-word}
 @media(max-width:830px){.kv{grid-template-columns:1fr}.kv b{margin-top:6px}}
+.sidebar{display:flex;flex-direction:column;overflow-y:auto;padding-bottom:16px!important}.sidebar .nav{flex:0 0 auto}.side-bottom{position:static!important;margin-top:auto;flex:0 0 auto}.sidebar .nav+.side-bottom{margin-top:auto}
+
+.cal-event.late{background:#ffd9d9;color:#a11d1d}.cal-event.soon{background:#ffe9b8;color:#8a5200}.cal-event.find{background:#e8e4ff;color:#4a3aa8}
+.cal-day{cursor:pointer}.cal-day.sel{border-color:#0e6fd3;background:#f2f8ff;box-shadow:0 0 0 2px #cfe4ff}
+.cal-sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}.cal-sum>div{background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:10px 12px}.cal-sum small{display:block;color:var(--muted);font-size:11px}.cal-sum b{font-size:20px}
+.cal-detail{margin-top:16px;border-top:1px solid var(--border);padding-top:14px}.cal-grp{margin:12px 0 4px;font-weight:800;font-size:13px}
+.cal-item{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 10px;border:1px solid var(--border);border-radius:11px;margin-top:6px;background:#fff}.cal-item .grow{flex:1 1 220px;min-width:0;word-break:break-word}
+.cal-agenda-day{margin-top:14px;font-weight:900}
+@media(max-width:830px){.cal-sum{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 </head>
 <body>
@@ -239,10 +248,18 @@ th,td{padding:9px 8px}
    <div class="panel">
     <div class="calendar-headbar">
      <div><h3 style="margin:0">Kalender Inspeksi</h3><div class="muted" id="calendarMonthLabel"></div></div>
-     <div style="display:flex;gap:7px"><button class="btn" onclick="changeCalendarMonth(-1)">‹ Bulan Sebelumnya</button><button class="btn soft" onclick="calendarDate=new Date();renderCalendar()">Hari Ini</button><button class="btn" onclick="changeCalendarMonth(1)">Bulan Berikutnya ›</button></div>
+     <div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn" onclick="changeCalendarMonth(-1)">‹</button><button class="btn soft" onclick="calToday()">Hari Ini</button><button class="btn" onclick="changeCalendarMonth(1)">›</button></div>
     </div>
+    <div class="toolbar">
+     <button class="btn primary small" id="calVMonth" onclick="calView('month')">Bulan</button><button class="btn soft small" id="calVAgenda" onclick="calView('agenda')">Agenda 60 hari</button>
+     <select class="select" id="calType" onchange="C.type=this.value;renderCalendar()"></select>
+     <select class="select" id="calKind" onchange="C.kind=this.value;renderCalendar()"><option value="">Semua kegiatan</option><option value="due">Jadwal jatuh tempo</option><option value="insp">Inspeksi dilakukan</option><option value="find">Target finding</option></select>
+     <button class="btn soft small" onclick="exportCalendarICS()">⬇ .ics (Google Calendar)</button><button class="btn soft small" onclick="exportCalendarCSV()">⬇ Jadwal CSV</button>
+    </div>
+    <div class="cal-sum" id="calSummary"></div>
     <div class="calendar-grid" id="calendarGrid"></div>
-    <div class="legend"><span><i style="background:#e6f8ef"></i> Histori PASS</span><span><i style="background:#ffe5e5"></i> Histori FAIL</span><span><i style="background:#fff1d5"></i> Jadwal / Next Due</span></div>
+    <div class="legend"><span><i style="background:#e6f8ef"></i> Inspeksi PASS</span><span><i style="background:#ffe5e5"></i> Inspeksi FAIL</span><span><i style="background:#fff1d5"></i> Jadwal / Next Due</span><span><i style="background:#ffe9b8"></i> Due ≤ 7 hari</span><span><i style="background:#ffd9d9"></i> Terlambat</span><span><i style="background:#e8e4ff"></i> Target finding</span></div>
+    <div class="cal-detail" id="calDetail"></div>
    </div>
   </section>
 
@@ -2029,20 +2046,71 @@ setInterval(updateLiveClock,1000);updateLiveClock();
 
 /* ===== Kalender inspeksi (fungsi ini tidak ada di file v5 asli) ===== */
 function changeCalendarMonth(n){calendarDate=new Date(calendarDate.getFullYear(),calendarDate.getMonth()+n,1);renderCalendar()}
+const C={view:"month",sel:null,type:"",kind:""};
+const dkey=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+function calAssets(){return scopedAssets().filter(a=>!C.type||a.type===C.type)}
+function calEvents(){
+ const assets=calAssets(),ids=new Set(assets.map(a=>a.id)),ev={};
+ const add=(d,e)=>{if(!d)return;d=String(d).slice(0,10);(ev[d]=ev[d]||[]).push(e)};
+ if(!C.kind||C.kind==="due")assets.forEach(a=>{if(!a.due)return;const n=daysUntil(a.due);add(a.due,{k:"due",c:n<0?"late":n<=7?"soon":"schedule",t:(n<0?"Terlambat ":"Due ")+a.id,id:a.id,n,a})});
+ if(!C.kind||C.kind==="insp")DB.inspections.filter(i=>ids.has(i.asset)).forEach(i=>add(i.date,{k:"insp",c:i.result==="FAIL"?"fail":"history",t:i.result+" "+i.asset,id:i.id,i}));
+ if(!C.kind||C.kind==="find")DB.findings.filter(f=>ids.has(f.asset)&&f.status!=="CLOSED").forEach(f=>add(f.target,{k:"find",c:"find",t:"Finding "+f.asset,id:f.id,f}));
+ return ev}
+function calView(v){C.view=v;renderCalendar()}
+function calToday(){calendarDate=new Date();C.sel=dkey(new Date());renderCalendar()}
+function calSelect(k){C.sel=k;renderCalendar();const d=document.getElementById("calDetail");if(d&&d.scrollIntoView)d.scrollIntoView({behavior:"smooth",block:"nearest"})}
+function calItem(e){
+ if(e.k==="due"){const a=e.a,n=e.n;return `<div class="cal-item"><div class="grow"><b>${esc(a.id)}</b> • ${esc(a.type)} • ${esc(plantName(a.plant))} • ${esc(a.area||"-")}<div class="muted" style="font-size:12px">${esc(a.location||"-")} • Jatuh tempo ${fmtDate(a.due)} (${n<0?Math.abs(n)+" hari terlambat":n===0?"hari ini":n+" hari lagi"})</div></div>${tag(a.status)}<button class="btn soft small" onclick="go('inspection');openScanModal('${esc(a.id)}')">☑ Inspeksi</button><button class="btn soft small" onclick="viewAssetHistory('${esc(a.id)}')">🕘 Riwayat</button></div>`}
+ if(e.k==="insp"){const i=e.i;return `<div class="cal-item"><div class="grow"><b>${esc(i.asset)}</b> • ${esc(i.frequency||"-")} • oleh ${esc(i.inspector||"-")}</div>${tag(i.result)}${tag(i.approval)}<button class="btn soft small" onclick="openInspectionReview(${i.id})">🔍 Detail</button></div>`}
+ const f=e.f;return `<div class="cal-item"><div class="grow"><b>${esc(f.id)}</b> • ${esc(f.asset)}<div class="muted" style="font-size:12px">${esc(f.desc)} • PIC ${esc(f.pic||"-")}</div></div>${tag(f.severity)}${tag(f.status)}<button class="btn soft small" onclick="openFindingHistory('${esc(f.id)}')">🔍 Detail</button></div>`}
+function calGroups(list){
+ const g=[["due","⏰ Jadwal jatuh tempo"],["insp","☑ Inspeksi dilakukan"],["find","⚠ Target penyelesaian finding"]];
+ return g.map(x=>{const l=list.filter(e=>e.k===x[0]);return l.length?`<div class="cal-grp">${x[1]} (${l.length})</div>`+l.map(calItem).join(""):""}).join("")}
 function renderCalendar(){
  const g=document.getElementById("calendarGrid");if(!g)return;
- const y=calendarDate.getFullYear(),m=calendarDate.getMonth(),pad=n=>String(n).padStart(2,"0");
+ const y=calendarDate.getFullYear(),m=calendarDate.getMonth(),pad=n=>String(n).padStart(2,"0"),pre=y+"-"+pad(m+1),today=dkey(new Date());
  document.getElementById("calendarMonthLabel").textContent=calendarDate.toLocaleDateString("id-ID",{month:"long",year:"numeric"});
- const ids=new Set(scopedAssets().map(a=>a.id)),ev={};
- const add=(d,e)=>{(ev[d]=ev[d]||[]).push(e)};
- DB.inspections.filter(i=>ids.has(i.asset)).forEach(i=>add(String(i.date),{c:i.result==="FAIL"?"fail":"history",t:(i.result==="FAIL"?"FAIL ":"PASS ")+i.asset}));
- scopedAssets().forEach(a=>{if(a.due)add(String(a.due),{c:"schedule",t:"Due "+a.id})});
- const first=new Date(y,m,1),lead=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate(),today=new Date().toISOString().slice(0,10);
+ calVMonth.className="btn small "+(C.view==="month"?"primary":"soft");calVAgenda.className="btn small "+(C.view==="agenda"?"primary":"soft");
+ const types=[...new Set(scopedAssets().map(a=>a.type))].sort();
+ if(calType.options.length!==types.length+1||C.type&&!types.includes(C.type)){if(C.type&&!types.includes(C.type))C.type="";calType.innerHTML='<option value="">Semua jenis</option>'+types.map(t=>`<option>${esc(t)}</option>`).join("")}
+ calType.value=C.type;calKind.value=C.kind;
+ const ev=calEvents(),assets=calAssets();
+ const dueM=assets.filter(a=>String(a.due||"").startsWith(pre)).length;
+ const doneSet=new Set(DB.inspections.filter(i=>String(i.date).startsWith(pre)&&assets.some(a=>a.id===i.asset)).map(i=>i.asset));
+ const late=assets.filter(a=>a.due&&a.due<today).length,soon=assets.filter(a=>a.due&&a.due>=today&&daysUntil(a.due)<=7).length;
+ const pct=assets.length?Math.round(doneSet.size*100/assets.length):0;
+ calSummary.innerHTML=`<div><small>Jatuh tempo bulan ini</small><b>${dueM}</b></div><div><small>Asset diinspeksi bulan ini</small><b>${doneSet.size}</b> <span class="muted">/ ${assets.length} (${pct}%)</span></div><div><small>Terlambat (semua)</small><b style="color:${late?"var(--red)":"inherit"}">${late}</b></div><div><small>Due ≤ 7 hari</small><b style="color:${soon?"#b46b00":"inherit"}">${soon}</b></div>`;
+ const det=document.getElementById("calDetail");
+ if(C.view==="agenda"){
+  g.style.display="none";
+  const end=dkey(new Date(Date.now()+60*86400000)),keys=Object.keys(ev).filter(k=>(k<=end)&&ev[k].some(e=>e.k!=="insp"&&(k>=today||e.k==="due"))).sort();
+  det.style.borderTop="0";det.style.paddingTop="0";
+  det.innerHTML=keys.map(k=>{const l=ev[k].filter(e=>e.k!=="insp");return `<div class="cal-agenda-day" style="color:${k<today?"var(--red)":"inherit"}">${fmtDate(k)}${k<today?" • terlambat":k===today?" • hari ini":""}</div>`+l.map(calItem).join("")}).join("")||'<div class="muted">Tidak ada jadwal dalam 60 hari ke depan.</div>';
+  return}
+ g.style.display="";det.style.borderTop="";det.style.paddingTop="";
+ const first=new Date(y,m,1),lead=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate();
  let h=["Sen","Sel","Rab","Kam","Jum","Sab","Min"].map(x=>'<div class="cal-week">'+x+'</div>').join("");
  for(let i=0;i<lead;i++)h+='<div class="cal-day dim"></div>';
- for(let d=1;d<=days;d++){const key=y+"-"+pad(m+1)+"-"+pad(d),list=ev[key]||[];
-  h+='<div class="cal-day'+(key===today?" today":"")+'"><div class="cal-num">'+d+'</div>'+list.slice(0,3).map(e=>'<div class="cal-event '+e.c+'" title="'+String(e.t).replace(/"/g,"&quot;")+'">'+String(e.t).replace(/[<>&]/g,"")+'</div>').join("")+(list.length>3?'<div class="cal-event" style="background:#eef2f6;color:#52667a">+'+(list.length-3)+' lagi</div>':"")+'</div>'}
- g.innerHTML=h}
+ for(let d=1;d<=days;d++){const key=pre+"-"+pad(d),list=ev[key]||[];
+  h+='<div class="cal-day'+(key===today?" today":"")+(key===C.sel?" sel":"")+'" tabindex="0" onclick="calSelect(\''+key+'\')" onkeydown="if(event.key===\'Enter\')calSelect(\''+key+'\')"><div class="cal-num">'+d+'</div>'+list.slice(0,3).map(e=>'<div class="cal-event '+e.c+'" title="'+esc(e.t)+'">'+esc(e.t)+'</div>').join("")+(list.length>3?'<div class="cal-event" style="background:#eef2f6;color:#52667a">+'+(list.length-3)+' lagi</div>':"")+'</div>'}
+ g.innerHTML=h;
+ det.innerHTML=C.sel&&C.sel.startsWith(pre)?`<h4 style="margin:0">${fmtDate(C.sel)}</h4>`+(calGroups(ev[C.sel]||[])||'<div class="muted" style="margin-top:6px">Tidak ada kegiatan pada tanggal ini.</div>'):'<div class="muted">Klik sebuah tanggal untuk melihat detail jadwal, inspeksi dan finding.</div>'}
+function icsEsc(t){return String(t||"").replace(/[\;,]/g,m=>"\\"+m).replace(/\n/g,"\\n")}
+function dlFile(name,mime,text){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:mime}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
+function exportCalendarICS(){
+ if(!me||me.role!=="admin")return toast("Hanya ADMIN yang dapat mengekspor jadwal");
+ const as=calAssets().filter(a=>a.due);if(!as.length)return toast("Tidak ada jadwal untuk diekspor");
+ const L=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//TJFI//Fire Safety//ID","CALSCALE:GREGORIAN"],stamp=new Date().toISOString().replace(/[-:]/g,"").slice(0,15)+"Z";
+ as.forEach(a=>{const d=a.due.replace(/-/g,""),nx=new Date(a.due+"T12:00:00");nx.setDate(nx.getDate()+1);
+  L.push("BEGIN:VEVENT","UID:"+icsEsc(a.id)+"-"+d+"@tjfi-fire-safety","DTSTAMP:"+stamp,"DTSTART;VALUE=DATE:"+d,"DTEND;VALUE=DATE:"+dkey(nx).replace(/-/g,""),
+   "SUMMARY:"+icsEsc("Inspeksi "+a.id+" ("+a.type+")"),"DESCRIPTION:"+icsEsc(plantName(a.plant)+" | "+(a.area||"-")+" | "+(a.location||"-")),
+   "BEGIN:VALARM","TRIGGER:-P3D","ACTION:DISPLAY","DESCRIPTION:Inspeksi segera jatuh tempo","END:VALARM","END:VEVENT")});
+ L.push("END:VCALENDAR");dlFile("jadwal_inspeksi_"+dkey(new Date())+".ics","text/calendar;charset=utf-8",L.join("\r\n"));toast("Ekspor "+as.length+" jadwal (.ics) selesai")}
+function exportCalendarCSV(){
+ if(!me||me.role!=="admin")return toast("Hanya ADMIN yang dapat mengekspor jadwal");
+ const as=calAssets().filter(a=>a.due).sort((x,y)=>x.due.localeCompare(y.due));if(!as.length)return toast("Tidak ada jadwal untuk diekspor");
+ const rows=[["Asset","Jenis","Plant","Area","Lokasi","Jatuh tempo","Sisa hari","Status"]].concat(as.map(a=>[a.id,a.type,plantName(a.plant),a.area,a.location,a.due,daysUntil(a.due),a.status]));
+ dlFile("jadwal_inspeksi_"+dkey(new Date())+".csv","text/csv;charset=utf-8","﻿"+rows.map(r=>r.map(csvCell).join(",")).join("\r\n"));toast("Ekspor "+as.length+" jadwal (CSV) selesai")}
 
 /* ===== RIWAYAT (view-only untuk semua role; ekspor & log aktivitas khusus admin) ===== */
 const H={tab:"insp",limit:100,logs:null,busy:false,err:"",total:0,ready:false};
