@@ -151,6 +151,9 @@ th,td{padding:9px 8px}
 .cal-item{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 10px;border:1px solid var(--border);border-radius:11px;margin-top:6px;background:#fff}.cal-item .grow{flex:1 1 220px;min-width:0;word-break:break-word}
 .cal-agenda-day{margin-top:14px;font-weight:900}
 @media(max-width:830px){.cal-sum{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.cfg-row{display:grid;grid-template-columns:26px minmax(0,1fr) auto auto auto auto;gap:6px;align-items:center;margin-top:6px}.cfg-row.f{grid-template-columns:minmax(0,1fr) 90px auto}.cfg-row label{display:flex;gap:5px;align-items:center;font-size:12px;white-space:nowrap}.cfg-row .btn{padding:6px 9px}
+@media(max-width:830px){.cfg-row{grid-template-columns:22px minmax(0,1fr) auto auto}.cfg-row label{grid-column:2/-1}}
 </style>
 </head>
 <body>
@@ -235,6 +238,7 @@ th,td{padding:9px 8px}
   </section>
 
   <section class="section" id="inspection">
+   <div id="cfgBar" class="hidden" style="justify-content:flex-end;margin-bottom:10px;display:flex"><button class="btn soft" onclick="openCfgModal()">⚙ Pengaturan Checklist & Frekuensi (Admin)</button></div>
    <div class="check-grid">
     <div class="panel"><div class="panel-head"><h3>Scan QR Equipment</h3></div><div class="locked-note"><b>Wajib scan QR terlebih dahulu.</b><br>Checklist hanya dapat dibuka setelah QR asset berhasil diverifikasi.</div><button class="btn primary" style="width:100%" onclick="openScanModal()">▣ Scan QR untuk Mulai Inspeksi</button><div style="margin-top:14px"><label>Asset terverifikasi</label><div id="verifiedAssetBox" class="muted">Belum ada asset yang diverifikasi.</div></div></div>
     <div class="panel"><div class="panel-head"><div><h3 id="inspTitle">Checklist Inspeksi</h3><div class="muted" id="inspMeta">Pilih equipment terlebih dahulu</div></div><span class="tag info" id="inspStatus">Belum dipilih</span></div><div id="checklistArea" class="muted">Checklist akan tampil di sini.</div>
@@ -338,6 +342,18 @@ th,td{padding:9px 8px}
  </div>
 </div></div>
 
+<div class="modal" id="cfgModal"><div class="modalbox" style="max-width:780px"><div class="modalhead"><h3>Pengaturan Checklist & Frekuensi</h3><button class="close" onclick="closeModal('cfgModal')">×</button></div>
+ <div class="formgrid">
+  <div class="full"><label>Jenis equipment</label><div style="display:flex;gap:8px"><select id="cfgType" class="select" onchange="cfgLoad()"></select><button class="btn soft small" onclick="cfgNewType()">＋ Jenis baru</button></div><small id="cfgState" class="muted"></small></div>
+  <div><label>Standar acuan</label><input id="cfgStd" class="input" maxlength="300" placeholder="mis. NFPA 10 / Permenaker 04/1980"></div>
+  <div><label>Frekuensi default</label><select id="cfgDef" class="select"></select></div>
+  <div class="full"><label>Catatan / petunjuk untuk inspector</label><textarea id="cfgNotes" rows="2" maxlength="1000" placeholder="mis. Timbang tabung CO2, selisih berat maks. 10%"></textarea></div>
+ </div>
+ <div class="rv-h">Pilihan frekuensi <span class="muted" style="font-weight:400">(nama + interval hari)</span></div><div id="cfgFreqs"></div><button class="btn soft small" style="margin-top:8px" onclick="cfgAddFreq()">＋ Frekuensi</button>
+ <div class="rv-h">Item checklist</div><div id="cfgItems"></div><button class="btn soft small" style="margin-top:8px" onclick="cfgAddItem()">＋ Item</button>
+ <div id="cfgMsg" class="notice danger hidden" style="margin-top:12px"></div>
+ <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button class="btn" onclick="cfgReset()">↺ Kembalikan ke standar bawaan</button><span style="display:flex;gap:8px"><button class="btn" onclick="closeModal('cfgModal')">Batal</button><button class="btn success" onclick="cfgSave()">Simpan</button></span></div>
+</div></div>
 <div class="modal" id="historyDetailModal"><div class="modalbox"><div class="modalhead"><h3 id="histDetailTitle">Detail</h3><button class="close" onclick="closeModal('historyDetailModal')">×</button></div>
  <div id="histDetailBody"></div>
  <div style="display:flex;justify-content:flex-end;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)"><button class="btn" onclick="closeModal('historyDetailModal')">Tutup</button></div>
@@ -1615,9 +1631,9 @@ const DEFAULT_API_URL="PASTE_URL_WEB_APP_DI_SINI";
 let API_URL=localStorage.getItem("fsApiUrl")||DEFAULT_API_URL;
 const tokStore={get(){try{return localStorage.getItem("fsToken")||sessionStorage.getItem("fsToken")||""}catch(e){return ""}},set(v){try{localStorage.setItem("fsToken",v)}catch(e){try{sessionStorage.setItem("fsToken",v)}catch(_){}}},clear(){try{localStorage.removeItem("fsToken")}catch(e){}try{sessionStorage.removeItem("fsToken")}catch(e){}try{localStorage.removeItem("fsPage")}catch(e){}}};
 let TOKEN=tokStore.get();
-const TABLES={assets:"id",users:"username",inspections:"id",findings:"id"};
-let SNAP={assets:{},users:{},inspections:{},findings:{}},INFLIGHT={},syncTimer=null,syncBusy=false,syncFail=0;
-function emptyDB(){return{assets:[],users:[],inspections:[],findings:[]}}
+const TABLES={assets:"id",users:"username",inspections:"id",findings:"id",templates:"type"};
+let SNAP={assets:{},users:{},inspections:{},findings:{},templates:{}},INFLIGHT={},syncTimer=null,syncBusy=false,syncFail=0;
+function emptyDB(){return{assets:[],users:[],inspections:[],findings:[],templates:[]}}
 function esc(x){return String(x==null?"":x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function apiReady(){return typeof API_URL==="string"&&API_URL.startsWith("https://")}
 function setApiUrl(){
@@ -1779,7 +1795,7 @@ async function login(){
 function applyRoleAccess(){
  const isAdmin=me.role==="admin";
  navDashboard.style.display=isAdmin?"flex":"none";navInventory.style.display=isAdmin?"flex":"none";
- navInspection.style.display="flex";navHistory.style.display="flex";navCalendar.style.display=isAdmin?"flex":"none";
+ cfgBar.classList.toggle("hidden",!isAdmin);navInspection.style.display="flex";navHistory.style.display="flex";navCalendar.style.display=isAdmin?"flex":"none";
  approvalNav.style.display=isAdmin?"flex":"none";navFindings.style.display=isAdmin?"flex":"none";
  navNotifications.style.display=isAdmin?"flex":"none";settingsNav.style.display=isAdmin?"flex":"none";
  addAssetBtn.style.display=isAdmin?"inline-block":"none";
@@ -1788,7 +1804,7 @@ function applyRoleAccess(){
 function showApp(){
  loginScreen.style.display="none";guestScreen.classList.add("hidden");app.style.display="block";
  userName.textContent=me.name;userRole.textContent=me.role.toUpperCase()+(me.plant!=="ALL"?" • "+plantName(me.plant):" • ALL PLANTS");heroName.textContent=me.name;
- populatePlantFilter();applyRoleAccess();renderAll();
+ populatePlantFilter();applyRoleAccess();cfgTypeOptions();renderAll();
  if(me.role==="inspector"){go("inspection")}else{let lp="";try{lp=window.__restorePage?(localStorage.getItem("fsPage")||""):""}catch(e){}window.__restorePage=false;go(lp&&titles[lp]?lp:"dashboard")}
  let q=new URLSearchParams(location.search).get("asset");if(q&&me.role==="admin"){go("inventory");assetSearch.value=q;renderInventory()}
 }
@@ -1946,17 +1962,17 @@ function renderInspectionAssets(){
 }
 function selectInspectionAsset(id,fromScan=false){
  if(!fromScan||verifiedAssetId!==id)return toast("Scan QR asset terlebih dahulu");let a=DB.assets.find(x=>x.id===id);if(!a||!allowedPlant(a.plant))return toast("Asset tidak ditemukan / tidak diizinkan");selected=a;answers={};evidencePhotos={};inspTitle.textContent=a.id;inspMeta.textContent=`${a.name} • ${plantName(a.plant)} • ${a.area||"-"} • ${a.location}`;inspStatus.textContent="QR Terverifikasi";inspStatus.className="tag ok";inspRemark.value="";inspPhoto.value="";
- let items=CHECKLISTS[a.type]||CHECKLISTS.Other;checklistArea.innerHTML=items.map((it,i)=>`<div class="check-row"><div><b>${i+1}. ${it}</b><div style="margin-top:8px" class="evidence-box"><input id="ev${i}" class="input" type="file" accept="image/*" onchange="setEvidencePhoto(${i},this)"><img id="evthumb${i}" class="evidence-thumb" alt="Bukti item"></div><small class="muted">Bukti foto wajib untuk item ini.</small></div><div class="choices"><button id="q${i}OK" class="choice okc" onclick="answer(${i},'OK')">OK</button><button id="q${i}NG" class="choice ngc" onclick="answer(${i},'NG')">NG</button><button id="q${i}NA" class="choice nac" onclick="answer(${i},'N/A')">N/A</button></div></div>`).join("");inspectionFooter.classList.remove("hidden");renderInspectionAssets()
+ const cfg=cfgFor(a.type);let items=cfg.items.map(x=>x.t);frequency.innerHTML=cfg.freqs.map(f=>`<option>${esc(f.name)}</option>`).join("");frequency.value=cfg.freqs.some(f=>f.name===cfg.def)?cfg.def:cfg.freqs[0].name;checklistArea.innerHTML=cfgBanner(cfg)+items.map((it,i)=>`<div class="check-row"><div><b>${i+1}. ${esc(it)}</b><div style="margin-top:8px" class="evidence-box"><input id="ev${i}" class="input" type="file" accept="image/*" onchange="setEvidencePhoto(${i},this)"><img id="evthumb${i}" class="evidence-thumb" alt="Bukti item"></div><small class="muted">${cfg.items[i].photo?"Bukti foto wajib untuk item ini.":"Bukti foto opsional untuk item ini."}</small></div><div class="choices"><button id="q${i}OK" class="choice okc" onclick="answer(${i},'OK')">OK</button><button id="q${i}NG" class="choice ngc" onclick="answer(${i},'NG')">NG</button><button id="q${i}NA" class="choice nac" onclick="answer(${i},'N/A')">N/A</button></div></div>`).join("");inspectionFooter.classList.remove("hidden");renderInspectionAssets()
 }
 async function setEvidencePhoto(i,input){let data=await imageToSmallData(input,700);if(data){evidencePhotos[i]=data;let img=document.getElementById(`evthumb${i}`);img.src=data;img.style.display="block"}else delete evidencePhotos[i];updateInspectionProgress()}
-function answer(i,v){let item=(CHECKLISTS[selected.type]||CHECKLISTS.Other)[i];answers[item]=v;["OK","NG","NA"].forEach(x=>document.getElementById(`q${i}${x}`).classList.remove("sel"));document.getElementById(`q${i}${v==="N/A"?"NA":v}`).classList.add("sel");updateInspectionProgress()}
-function updateInspectionProgress(){if(!selected)return;inspMsg.classList.add("hidden");document.querySelectorAll(".check-row.missing").forEach(x=>x.classList.remove("missing"));let total=(CHECKLISTS[selected.type]||CHECKLISTS.Other).length,done=Object.keys(answers).length,photos=Object.keys(evidencePhotos).length;if(done===total&&photos===total){let fail=Object.values(answers).includes("NG");inspStatus.textContent=fail?"FAIL • Bukti Lengkap":"PASS • Bukti Lengkap";inspStatus.className="tag "+(fail?"bad":"ok")}else{inspStatus.textContent=`Checklist ${done}/${total} • Foto ${photos}/${total}`;inspStatus.className="tag info"}}
+function answer(i,v){let item=cfgFor(selected.type).items[i].t;answers[item]=v;["OK","NG","NA"].forEach(x=>document.getElementById(`q${i}${x}`).classList.remove("sel"));document.getElementById(`q${i}${v==="N/A"?"NA":v}`).classList.add("sel");updateInspectionProgress()}
+function updateInspectionProgress(){if(!selected)return;inspMsg.classList.add("hidden");document.querySelectorAll(".check-row.missing").forEach(x=>x.classList.remove("missing"));const cf=cfgFor(selected.type).items;let total=cf.length,done=Object.keys(answers).length,need=cf.filter(x=>x.photo).length,photos=cf.filter((x,i)=>x.photo&&evidencePhotos[i]).length;if(done===total&&photos===need){let fail=Object.values(answers).includes("NG");inspStatus.textContent=fail?"FAIL • Bukti Lengkap":"PASS • Bukti Lengkap";inspStatus.className="tag "+(fail?"bad":"ok")}else{inspStatus.textContent=`Checklist ${done}/${total} • Foto ${photos}/${need}`;inspStatus.className="tag info"}}
 
 function resetChecklist(){if(selected&&verifiedAssetId===selected.id)selectInspectionAsset(selected.id,true)}
 function imageToSmallData(input,maxW=700){return new Promise(resolve=>{let f=input.files[0];if(!f)return resolve(null);let rd=new FileReader();rd.onload=e=>{let img=new Image();img.onload=()=>{let scale=Math.min(1,maxW/img.width),c=document.createElement("canvas");c.width=Math.round(img.width*scale);c.height=Math.round(img.height*scale);c.getContext("2d").drawImage(img,0,0,c.width,c.height);resolve(c.toDataURL("image/jpeg",.72))};img.src=e.target.result};rd.readAsDataURL(f)})}
 function inspProblem(msg,idx){inspMsg.textContent=msg;inspMsg.classList.remove("hidden");document.querySelectorAll(".check-row.missing").forEach(x=>x.classList.remove("missing"));if(idx!=null){const r=document.querySelectorAll(".check-row")[idx];if(r){r.classList.add("missing");r.scrollIntoView({behavior:"smooth",block:"center"})}}else inspMsg.scrollIntoView({behavior:"smooth",block:"center"});toast(msg)}
 async function saveInspection(){
- if(!selected||verifiedAssetId!==selected.id)return inspProblem("Scan QR asset terlebih dahulu. Sesi scan hilang, tutup checklist lalu scan QR lagi.");let items=CHECKLISTS[selected.type]||CHECKLISTS.Other;{const miss=items.findIndex((it,i)=>!(it in answers)||!evidencePhotos[i]);if(miss>=0){const noAns=!(items[miss] in answers),noPh=!evidencePhotos[miss];return inspProblem(`Belum lengkap: item ${miss+1} "${items[miss]}" — ${noAns&&noPh?"belum dipilih OK/NG/N/A dan belum ada foto bukti":noAns?"belum dipilih OK/NG/N/A":"belum ada foto bukti"}.`,miss)}}inspMsg.classList.add("hidden");
+ if(!selected||verifiedAssetId!==selected.id)return inspProblem("Scan QR asset terlebih dahulu. Sesi scan hilang, tutup checklist lalu scan QR lagi.");const cfgI=cfgFor(selected.type).items;let items=cfgI.map(x=>x.t);{const miss=items.findIndex((it,i)=>!(it in answers)||(cfgI[i].photo&&!evidencePhotos[i]));if(miss>=0){const noAns=!(items[miss] in answers),noPh=cfgI[miss].photo&&!evidencePhotos[miss];return inspProblem(`Belum lengkap: item ${miss+1} "${items[miss]}" — ${noAns&&noPh?"belum dipilih OK/NG/N/A dan belum ada foto bukti":noAns?"belum dipilih OK/NG/N/A":"belum ada foto bukti"}.`,miss)}}inspMsg.classList.add("hidden");
  let fail=Object.values(answers).includes("NG"),photo=await imageToSmallData(inspPhoto),id=Date.now(),perItemEvidence={};items.forEach((item,i)=>perItemEvidence[item]=evidencePhotos[i]);DB.inspections.unshift({id,asset:selected.id,plant:selected.plant,date:new Date().toISOString().slice(0,10),frequency:frequency.value,result:fail?"FAIL":"PASS",answers:{...answers},evidence:perItemEvidence,remark:inspRemark.value,photo,inspector:me.name,approval:"PENDING",approvedBy:null,qrVerified:true});if(fail){selected.status="Rusak";let ng=Object.entries(answers).filter(x=>x[1]==="NG").map(x=>x[0]);createFinding(selected.id,"Item NG: "+ng.join(", "),"High","HSE / Maintenance",isoOffset(3),photo)}saveDB();toast(`Inspeksi ${fail?"FAIL":"PASS"} tersimpan & menunggu approval`);verifiedAssetId=null;selected=null;answers={};evidencePhotos={};checklistArea.innerHTML="Checklist akan tampil setelah scan QR.";inspectionFooter.classList.add("hidden");renderAll()
 }
 function renderApproval(){let rows=scopedInspections().filter(i=>i.approval==="PENDING");approvalTable.innerHTML=rows.map(i=>`<tr><td>${i.id}</td><td><b>${i.asset}</b></td><td>${plantName(i.plant)}</td><td>${fmtDate(i.date)}</td><td>${i.inspector}</td><td>${tag(i.result)}</td><td>${i.evidence?Object.keys(i.evidence).length:0} foto</td><td>${i.photo?`<img class="photo" src="${i.photo}" onclick="window.open(this.src,'_blank')">`:"-"}</td><td><button class="btn primary small" onclick="openInspectionReview(${i.id})">🔍 Periksa Hasil</button></td></tr>`).join("")||'<tr><td colspan="9" class="muted">Tidak ada inspeksi pending.</td></tr>'}
@@ -2196,6 +2212,63 @@ function exportHistory(){
  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
  a.download=name+"_"+new Date().toISOString().slice(0,10)+".csv";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);
  toast("Ekspor "+rows.length+" baris selesai")}
+
+
+/* ===== PENGATURAN CHECKLIST & FREKUENSI (edit: admin saja; semua role memakai hasilnya) ===== */
+const DEFAULT_FREQS=[{name:"Daily",days:1},{name:"Monthly",days:30},{name:"Annual",days:365}];
+function tplFor(type){const t=(DB.templates||[]).find(x=>x.type===type);return t&&t.items&&t.items.length?t:null}
+function cfgFor(type){
+ const t=tplFor(type);
+ if(t)return{items:t.items.map(x=>({t:x.t,photo:x.photo!==false})),freqs:(t.frequencies&&t.frequencies.length?t.frequencies:DEFAULT_FREQS).map(f=>({name:f.name,days:Number(f.days)||0})),def:t.defaultFreq||"",standard:t.standard||"",notes:t.notes||"",custom:true,by:t.updatedBy||"",at:t.updatedAt||""};
+ return{items:(CHECKLISTS[type]||CHECKLISTS.Other).map(x=>({t:x,photo:true})),freqs:DEFAULT_FREQS.map(f=>({...f})),def:"Monthly",standard:"",notes:"",custom:false,by:"",at:""}}
+function cfgBanner(c){return(c.standard||c.notes)?`<div class="notice" style="margin:0 0 10px">${c.standard?`<div><b>Standar:</b> ${esc(c.standard)}</div>`:""}${c.notes?`<div style="margin-top:4px;white-space:pre-line">${esc(c.notes)}</div>`:""}</div>`:""}
+function cfgAllTypes(){return[...new Set([...Object.keys(CHECKLISTS),...DB.assets.map(a=>a.type),...(DB.templates||[]).map(t=>t.type),...(CFG.extra||[])].filter(Boolean))].sort()}
+function cfgTypeOptions(){
+ const sel=document.getElementById("aType");if(!sel)return;
+ const have=new Set([...sel.options].map(o=>o.value));
+ (DB.templates||[]).map(t=>t.type).filter(t=>t&&!have.has(t)).forEach(t=>{const o=document.createElement("option");o.textContent=t;sel.appendChild(o)})}
+const CFG={type:"",items:[],freqs:[],extra:[]};
+function openCfgModal(){
+ if(!me||me.role!=="admin")return toast("Hanya ADMIN yang dapat mengubah pengaturan inspeksi");
+ const types=cfgAllTypes();cfgType.innerHTML=types.map(t=>`<option>${esc(t)}</option>`).join("");
+ cfgType.value=(selected&&types.includes(selected.type))?selected.type:types[0];cfgLoad();cfgModal.classList.add("open")}
+function cfgLoad(){
+ const c=cfgFor(cfgType.value);CFG.type=cfgType.value;CFG.items=c.items;CFG.freqs=c.freqs;
+ cfgStd.value=c.standard;cfgNotes.value=c.notes;cfgMsg.classList.add("hidden");
+ cfgState.textContent=c.custom?"Pengaturan khusus"+(c.by?" • diubah oleh "+c.by:"")+(c.at?" • "+fmtDT(c.at):""):"Memakai standar bawaan sistem (belum pernah diubah)";
+ cfgRender(c.def)}
+function cfgRender(def){
+ cfgItems.innerHTML=CFG.items.map((x,i)=>`<div class="cfg-row"><span class="muted">${i+1}.</span><input class="input" maxlength="200" value="${esc(x.t)}" oninput="CFG.items[${i}].t=this.value" placeholder="Nama item pengecekan"><label title="Inspector wajib melampirkan foto"><input type="checkbox" ${x.photo?"checked":""} onchange="CFG.items[${i}].photo=this.checked"> Foto wajib</label><button class="btn small" onclick="cfgMove(${i},-1)" ${i===0?"disabled":""}>↑</button><button class="btn small" onclick="cfgMove(${i},1)" ${i===CFG.items.length-1?"disabled":""}>↓</button><button class="btn danger small" onclick="cfgDelItem(${i})">✕</button></div>`).join("")||'<div class="muted">Belum ada item.</div>';
+ cfgFreqs.innerHTML=CFG.freqs.map((f,i)=>`<div class="cfg-row f"><input class="input" maxlength="30" value="${esc(f.name)}" oninput="CFG.freqs[${i}].name=this.value" onchange="cfgDefRefresh()" placeholder="Nama (mis. Monthly)"><input class="input" type="number" min="0" max="3650" value="${f.days}" oninput="CFG.freqs[${i}].days=Number(this.value)||0" title="Interval (hari)"><button class="btn danger small" onclick="cfgDelFreq(${i})">✕</button></div>`).join("");
+ cfgDefRefresh(def)}
+function cfgDefRefresh(def){const cur=def||cfgDef.value;const names=CFG.freqs.map(f=>f.name.trim()).filter(Boolean);cfgDef.innerHTML=names.map(n=>`<option>${esc(n)}</option>`).join("");cfgDef.value=names.includes(cur)?cur:(names[0]||"")}
+function cfgMove(i,d){const j=i+d;if(j<0||j>=CFG.items.length)return;[CFG.items[i],CFG.items[j]]=[CFG.items[j],CFG.items[i]];cfgRender()}
+function cfgDelItem(i){CFG.items.splice(i,1);cfgRender()}
+function cfgAddItem(){CFG.items.push({t:"",photo:true});cfgRender();const l=cfgItems.querySelectorAll("input.input");if(l.length)l[l.length-1].focus()}
+function cfgAddFreq(){if(CFG.freqs.length>=8)return toast("Maksimal 8 pilihan frekuensi");CFG.freqs.push({name:"",days:30});cfgRender()}
+function cfgDelFreq(i){CFG.freqs.splice(i,1);cfgRender()}
+function cfgNewType(){
+ const n=(prompt("Nama jenis equipment baru (mis. APAR CO2):")||"").trim();if(!n)return;if(n.length>60)return toast("Maksimal 60 karakter");
+ if(!cfgAllTypes().some(t=>t.toLowerCase()===n.toLowerCase())){CFG.extra.push(n);cfgType.innerHTML=cfgAllTypes().map(t=>`<option>${esc(t)}</option>`).join("")}
+ cfgType.value=cfgAllTypes().find(t=>t.toLowerCase()===n.toLowerCase());cfgLoad()}
+function cfgProblem(m){cfgMsg.textContent=m;cfgMsg.classList.remove("hidden");cfgMsg.scrollIntoView({block:"nearest"})}
+function cfgSave(){
+ if(!me||me.role!=="admin")return toast("Hanya ADMIN yang dapat mengubah pengaturan inspeksi");
+ const items=CFG.items.map(x=>({t:x.t.trim(),photo:!!x.photo}));
+ if(!items.length||items.some(x=>!x.t))return cfgProblem("Isi semua nama item, atau hapus baris yang kosong (minimal 1 item).");
+ if(items.length>40)return cfgProblem("Maksimal 40 item.");
+ const seen=new Set();for(const x of items){const k=x.t.toLowerCase();if(seen.has(k))return cfgProblem('Item ganda: "'+x.t+'"');seen.add(k)}
+ const freqs=CFG.freqs.map(f=>({name:f.name.trim(),days:Math.max(0,Math.min(3650,Math.round(Number(f.days)||0)))}));
+ if(!freqs.length||freqs.some(f=>!f.name))return cfgProblem("Minimal 1 pilihan frekuensi, dan namanya tidak boleh kosong.");
+ const fs=new Set();for(const f of freqs){const k=f.name.toLowerCase();if(fs.has(k))return cfgProblem('Frekuensi ganda: "'+f.name+'"');fs.add(k)}
+ const rec={type:CFG.type,items,frequencies:freqs,defaultFreq:cfgDef.value,standard:cfgStd.value.trim(),notes:cfgNotes.value.trim(),updatedBy:me.name,updatedAt:new Date().toISOString()};
+ DB.templates=DB.templates||[];const ix=DB.templates.findIndex(t=>t.type===CFG.type);if(ix>=0)DB.templates[ix]=rec;else DB.templates.push(rec);
+ saveDB();cfgTypeOptions();closeModal("cfgModal");toast("Pengaturan "+CFG.type+" disimpan. Berlaku pada inspeksi berikutnya.")}
+function cfgReset(){
+ if(!me||me.role!=="admin")return;if(!confirm('Kembalikan "'+CFG.type+'" ke standar bawaan sistem?'))return;
+ DB.templates=DB.templates||[];const ix=DB.templates.findIndex(t=>t.type===CFG.type);
+ if(ix>=0){DB.templates[ix]={type:CFG.type,items:[],frequencies:[],defaultFreq:"",standard:"",notes:"",updatedBy:me.name,updatedAt:new Date().toISOString()};saveDB()}
+ cfgLoad();toast("Dikembalikan ke standar bawaan")}
 
 function renderAll(){if(!me)return;[renderDashboard,renderInventory,renderInspectionAssets,renderCalendar,renderApproval,renderFindings,renderHistory,renderNotifications,populateFindingAssets,renderUsers].forEach(f=>{try{f()}catch(e){console.error(f.name,e)}})}
 
